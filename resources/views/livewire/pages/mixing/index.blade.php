@@ -60,78 +60,112 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+<div class="space-y-4 w-full min-w-0">
     @if (session('status'))
-        <div class="rounded-md bg-green-50 p-4 text-sm text-green-700">{{ session('status') }}</div>
+        <div class="rounded border border-emerald-300 bg-emerald-50 p-3 text-xs font-medium text-emerald-800 shadow-xs">{{ session('status') }}</div>
     @endif
+
     <div>
-        <h1 class="text-2xl font-bold text-gray-900">Custom paint mix</h1>
-        <p class="mt-1 text-sm text-gray-600">Record estimated materials without changing official stock until the weekly
-            count.</p>
+        <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Operations</span>
+            <span class="text-xs text-slate-300">/</span>
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-700">Paint Center</span>
+        </div>
+        <h1 class="font-heading text-2xl font-bold tracking-tight text-slate-900">Custom Paint Mixing</h1>
     </div>
-    <div class="space-y-6 rounded-lg bg-white p-6 shadow-sm">
-        <div class="grid items-end gap-4 sm:grid-cols-[1fr_180px_150px_auto]">
-            <div><x-input-label for="productId" value="Material / SKU" /><select wire:model="productId" id="productId"
-                    class="mt-1 block w-full rounded-md border-gray-300">
-                    <option value="">Choose a material</option>
+
+    <div class="space-y-4 rounded-lg border border-slate-300 bg-white p-5 shadow-xs">
+        <div class="grid items-end gap-3 sm:grid-cols-[1fr_160px_130px_auto]">
+            <div>
+                <label for="productId" class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">Material Stock Product / SKU</label>
+                <select wire:model="productId" id="productId" class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-slate-500">
+                    <option value="">Choose a material...</option>
                     @foreach ($products as $product)
                         <option value="{{ $product->id }}">{{ $product->sku }} · {{ $product->name }}
                             ({{ \App\Support\Currency::format($product->selling_price) }})
                         </option>
                     @endforeach
                 </select>
+                <x-input-error :messages="$errors->get('productId')" class="mt-1" />
             </div>
-            <div><x-input-label for="estimatedQuantity" value="Estimated quantity" /><x-text-input
-                    wire:model="estimatedQuantity" id="estimatedQuantity" type="number" step="0.001"
-                    class="mt-1 block w-full" /></div>
-            <div><x-input-label for="estimatedQuantityUnit" value="Estimated unit" /><select
-                    wire:model="estimatedQuantityUnit" id="estimatedQuantityUnit"
-                    class="mt-1 block w-full rounded-md border-gray-300">
-                    <option value="">Choose unit</option>
+
+            <div>
+                <label for="estimatedQuantity" class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">Estimated Qty</label>
+                <input wire:model="estimatedQuantity" id="estimatedQuantity" type="number" step="0.001" placeholder="e.g. 0.5" class="w-full rounded border-slate-300 text-xs font-mono tabular-nums focus:border-slate-500 focus:ring-slate-500" />
+                <x-input-error :messages="$errors->get('estimatedQuantity')" class="mt-1" />
+            </div>
+
+            <div>
+                <label for="estimatedQuantityUnit" class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">Unit</label>
+                <select wire:model="estimatedQuantityUnit" id="estimatedQuantityUnit" class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-slate-500">
+                    <option value="">Unit</option>
                     <option value="ml">ml</option>
                     <option value="L">L</option>
                     <option value="oz">oz</option>
                     <option value="gal">gal</option>
-                </select></div><button wire:click="addComponent" type="button"
-                class="rounded-md bg-gray-800 px-4 py-2 text-sm font-semibold text-white">Add material</button>
+                </select>
+                <x-input-error :messages="$errors->get('estimatedQuantityUnit')" class="mt-1" />
+            </div>
+
+            <button wire:click="addComponent" type="button" class="inline-flex items-center justify-center rounded bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white shadow-xs hover:bg-slate-800 transition">
+                Add Material
+            </button>
         </div>
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200 text-sm">
-                <thead>
-                    <tr class="text-left text-xs uppercase text-gray-500">
-                        <th class="px-2 py-2">Material</th>
-                        <th class="px-2 py-2">SKU</th>
-                        <th class="px-2 py-2">Package Unit</th>
-                        <th class="px-2 py-2">Estimated Qty</th>
-                        <th class="px-2 py-2">Estimated Unit</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    @forelse ($components as $index => $component)
-                        <tr wire:key="mix-component-{{ $index }}">
-                            <td class="px-2 py-2">{{ $products->firstWhere('id', $component['product_id'])?->name }}
-                            </td>
-                            <td class="px-2 py-2 font-mono">
-                                {{ $products->firstWhere('id', $component['product_id'])?->sku }}</td>
-                            <td class="px-2 py-2">
-                                {{ $products->firstWhere('id', $component['product_id'])?->packageUnit?->abbreviation ?? '-' }}
-                            </td>
-                            <td class="px-2 py-2">{{ $component['estimated_quantity'] }}</td>
-                            <td class="px-2 py-2">{{ $component['estimated_quantity_unit'] }}</td>
-                            <td class="px-2 py-2 text-right"><button wire:click="removeComponent({{ $index }})"
-                                    type="button" class="text-red-600">Remove</button></td>
-                    </tr>@empty<tr>
-                            <td colspan="6" class="px-3 py-6 text-center text-gray-500">Add the base paint and
-                                tinting materials used.</td>
+
+        <div class="overflow-hidden rounded-lg border border-slate-300 bg-white">
+            <div class="overflow-x-auto w-full">
+                <table class="w-full border-collapse border border-slate-300 text-xs">
+                    <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
+                        <tr>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-left">Material</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-32">SKU</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Package Unit</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-right w-28">Estimated Qty</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-24">Estimated Unit</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-right w-20"></th>
                         </tr>
-                    @endforelse
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        @forelse ($components as $index => $component)
+                            <tr wire:key="mix-component-{{ $index }}" class="hover:bg-slate-50">
+                                <td class="border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-900">{{ $products->firstWhere('id', $component['product_id'])?->name }}</td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 font-mono tabular-nums text-slate-600">
+                                    {{ $products->firstWhere('id', $component['product_id'])?->sku }}</td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600">
+                                    {{ $products->firstWhere('id', $component['product_id'])?->packageUnit?->abbreviation ?? '-' }}
+                                </td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-right font-mono tabular-nums font-bold text-slate-900">{{ $component['estimated_quantity'] }}</td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-700">{{ $component['estimated_quantity_unit'] }}</td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-right">
+                                    <button wire:click="removeComponent({{ $index }})" type="button" class="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-rose-700 hover:bg-rose-50 shadow-xs transition">Remove</button>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="border border-slate-200 px-3 py-6 text-center text-slate-500">
+                                    No component materials added yet. Add base paint and tinting materials above.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
         </div>
-        <div><x-input-label for="notes" value="Notes" />
-            <textarea wire:model="notes" id="notes" rows="2" class="mt-1 block w-full rounded-md border-gray-300"></textarea>
+
+        <div class="border-t border-slate-200 pt-3">
+            <label for="notes" class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">Mixing Formula Notes</label>
+            <textarea wire:model="notes" id="notes" rows="2" placeholder="e.g. 50% primer base + 250ml tinting black..." class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-slate-500"></textarea>
         </div>
-        <div class="flex justify-end"><x-primary-button>Finalize custom mix</x-primary-button></div>
+
+        <div class="flex justify-end pt-2 border-t border-slate-200">
+            <button 
+                wire:click="finalizeMix" 
+                wire:confirm="Confirm and finalize this custom paint mix?"
+                type="button" 
+                class="rounded bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white shadow-xs hover:bg-slate-800 transition"
+            >
+                Finalize Custom Mix
+            </button>
+        </div>
     </div>
 </div>

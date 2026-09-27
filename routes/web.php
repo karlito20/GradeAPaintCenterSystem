@@ -11,56 +11,93 @@ Volt::route('/dashboard', 'pages.dashboard')
     ->middleware(['auth', 'verified'])
     ->name('dashboard');
 
-Volt::route('/products', 'pages.products.index')
-    ->middleware(['auth', 'verified'])
-    ->name('products.index');
-
-Volt::route('/references/brands', 'pages.references.brands')->middleware(['auth', 'verified', 'role:dev,admin'])->name('references.brands');
-Volt::route('/references/categories', 'pages.references.categories')->middleware(['auth', 'verified', 'role:dev,admin'])->name('references.categories');
-Volt::route('/references/package-units', 'pages.references.package-units')->middleware(['auth', 'verified', 'role:dev,admin'])->name('references.package-units');
-
-Volt::route('/inventory/stock-in', 'pages.inventory.stock-in')
-    ->middleware(['auth', 'verified'])
-    ->name('inventory.stock-in');
-
-Volt::route('/inventory/physical-count', 'pages.inventory.physical-count')
-    ->middleware(['auth', 'verified'])
-    ->name('inventory.physical-count');
-
-Volt::route('/inventory/movements', 'pages.inventory.movements')->middleware(['auth', 'verified'])->name('inventory.movements');
-
+// Sales Section
 Volt::route('/sales', 'pages.sales.index')
     ->middleware(['auth', 'verified'])
     ->name('sales.index');
 
-Volt::route('/sales/history', 'pages.sales.history')->middleware(['auth', 'verified'])->name('sales.history');
+Volt::route('/products', 'pages.products.index')
+    ->middleware(['auth', 'verified'])
+    ->name('products.index');
 
-Volt::route('/sales/checkout', 'pages.sales.checkout')->middleware(['auth', 'verified'])->name('sales.checkout');
-Route::get('/sales/{sale}/receipt', SaleReceiptController::class)->middleware(['auth', 'verified'])->name('sales.receipt');
+Volt::route('/sales/history', 'pages.sales.history')
+    ->middleware(['auth', 'verified', 'role:dev,admin,manager'])
+    ->name('sales.history');
+
+Volt::route('/sales/checkout', 'pages.sales.checkout')
+    ->middleware(['auth', 'verified'])
+    ->name('sales.checkout');
+
+Route::get('/sales/{sale}/receipt', SaleReceiptController::class)
+    ->middleware(['auth', 'verified'])
+    ->name('sales.receipt');
 
 Route::redirect('/mixing', '/sales')
     ->middleware(['auth', 'verified'])
     ->name('mixing.index');
 
-Volt::route('/reports/inventory', 'pages.reports.inventory')
+// Inventory Section
+Volt::route('/inventory/stock-in', 'pages.inventory.stock-in')
     ->middleware(['auth', 'verified'])
-    ->name('reports.inventory');
+    ->name('inventory.stock-in');
 
-Volt::route('/audit', 'pages.audit.index')->middleware(['auth', 'verified', 'role:dev,admin'])->name('audit.index');
-
-Volt::route('/user-access', 'pages.user-access.index')->middleware(['auth', 'verified', 'role:dev,admin'])->name('user-access.index');
-
-Route::get('/reports/inventory/pdf', InventoryReportController::class)
+Volt::route('/inventory', 'pages.reports.inventory')
     ->middleware(['auth', 'verified'])
-    ->name('reports.inventory.pdf');
+    ->name('inventory.index');
 
-Volt::route('/reports/sales', 'pages.reports.sales')
+Volt::route('/inventory/movements', 'pages.inventory.movements')
     ->middleware(['auth', 'verified'])
-    ->name('reports.sales');
+    ->name('inventory.movements');
 
-Volt::route('/reports/mixing', 'pages.reports.mixing')
+Volt::route('/inventory/physical-count', 'pages.inventory.physical-count')
     ->middleware(['auth', 'verified'])
-    ->name('reports.mixing');
+    ->name('inventory.physical-count');
+
+Route::get('/inventory/pdf', InventoryReportController::class)
+    ->middleware(['auth', 'verified'])
+    ->name('inventory.pdf');
+
+// Aliases for compatibility
+Route::redirect('/reports/inventory', '/inventory')->name('reports.inventory');
+Route::get('/reports/inventory/pdf', InventoryReportController::class)->middleware(['auth', 'verified'])->name('reports.inventory.pdf');
+Route::redirect('/reports/sales', '/sales/history')->name('reports.sales');
+Route::redirect('/reports/mixing', '/sales')->name('reports.mixing');
+
+// Administrative Section (dev, admin)
+Volt::route('/audit', 'pages.audit.index')
+    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->name('audit.index');
+
+Volt::route('/user-access', 'pages.user-access.index')
+    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->name('user-access.index');
+
+Volt::route('/admin/backup', 'pages.admin.backup')
+    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->name('backup.index');
+
+// Developer Tools Section (dev only)
+Volt::route('/dev/troubleshooting', 'pages.dev.troubleshooting')
+    ->middleware(['auth', 'verified', 'role:dev'])
+    ->name('dev.troubleshooting');
+
+// Settings Section (dev, admin)
+Volt::route('/settings/brands', 'pages.references.brands')
+    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->name('references.brands');
+
+Volt::route('/settings/categories', 'pages.references.categories')
+    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->name('references.categories');
+
+Volt::route('/settings/package-units', 'pages.references.package-units')
+    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->name('references.package-units');
+
+// Legacy route aliases for reference settings
+Route::redirect('/references/brands', '/settings/brands');
+Route::redirect('/references/categories', '/settings/categories');
+Route::redirect('/references/package-units', '/settings/package-units');
 
 Route::view('profile', 'profile')
     ->middleware(['auth'])

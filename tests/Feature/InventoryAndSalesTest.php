@@ -13,7 +13,7 @@ function inventoryProduct(array $attributes = []): Product
 
     $product = Product::create(array_merge([
         'category_id' => $category->id,
-        'sku' => 'PAINT-' . uniqid(),
+        'sku' => 'PAINT-'.uniqid(),
         'name' => 'Interior Paint',
         'selling_price' => 100,
         'low_stock_threshold' => 1,

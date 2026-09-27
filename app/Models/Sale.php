@@ -15,6 +15,8 @@ class Sale extends Model
         'sold_at',
         'type',
         'subtotal',
+        'discount_percentage',
+        'discount_amount',
         'total',
         'payment_method',
         'payment_amount',
@@ -23,7 +25,15 @@ class Sale extends Model
 
     protected function casts(): array
     {
-        return ['sold_at' => 'datetime', 'subtotal' => 'decimal:2', 'total' => 'decimal:2', 'payment_amount' => 'decimal:2', 'change_amount' => 'decimal:2'];
+        return [
+            'sold_at' => 'datetime',
+            'subtotal' => 'decimal:2',
+            'discount_percentage' => 'decimal:2',
+            'discount_amount' => 'decimal:2',
+            'total' => 'decimal:2',
+            'payment_amount' => 'decimal:2',
+            'change_amount' => 'decimal:2',
+        ];
     }
 
     public function user(): BelongsTo

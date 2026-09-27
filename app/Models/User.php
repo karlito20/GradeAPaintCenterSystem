@@ -38,6 +38,21 @@ class User extends Authenticatable
         return $this->hasRole(['dev', 'admin']);
     }
 
+    public function canAccessSettings(): bool
+    {
+        return $this->hasRole(['dev', 'admin']);
+    }
+
+    public function canViewSalesHistory(): bool
+    {
+        return $this->hasRole(['dev', 'admin', 'manager']);
+    }
+
+    public function canAccessTroubleshooting(): bool
+    {
+        return $this->hasRole('dev');
+    }
+
     /**
      * Get the attributes that should be cast.
      *
