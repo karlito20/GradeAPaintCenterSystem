@@ -35,22 +35,37 @@ class User extends Authenticatable
 
     public function canAccessAdministration(): bool
     {
-        return $this->hasRole(['dev', 'admin']);
+        return $this->hasRole(['superadmin', 'admin']);
     }
 
     public function canAccessSettings(): bool
     {
-        return $this->hasRole(['dev', 'admin']);
+        return $this->hasRole(['superadmin', 'admin']);
     }
 
     public function canViewSalesHistory(): bool
     {
-        return $this->hasRole(['dev', 'admin', 'manager']);
+        return $this->hasRole(['superadmin', 'admin', 'manager']);
+    }
+
+    public function canViewQuotations(): bool
+    {
+        return $this->hasRole(['superadmin', 'admin', 'manager', 'mixer']);
+    }
+
+    public function isManagerOrAbove(): bool
+    {
+        return $this->hasRole(['superadmin', 'admin', 'manager']);
+    }
+
+    public function canViewSalesReport(): bool
+    {
+        return $this->hasRole(['superadmin', 'admin', 'manager']);
     }
 
     public function canAccessTroubleshooting(): bool
     {
-        return $this->hasRole('dev');
+        return $this->hasRole('superadmin');
     }
 
     /**

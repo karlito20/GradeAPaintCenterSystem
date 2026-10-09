@@ -11,7 +11,7 @@ class SaleItem extends Model
 
     protected function casts(): array
     {
-        return ['quantity' => 'decimal:3', 'unit_price' => 'decimal:2', 'subtotal' => 'decimal:2'];
+        return ['quantity' => 'decimal:2', 'unit_price' => 'decimal:2', 'subtotal' => 'decimal:2'];
     }
 
     public function sale(): BelongsTo

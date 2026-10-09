@@ -10,7 +10,7 @@ use Livewire\Volt\Volt;
 
 test('custom mixing records estimated components without changing official stock', function () {
     $user = User::factory()->create();
-    $category = Category::create(['name' => 'Paint']);
+    $category = Category::create(['name' => 'Paint', 'is_for_mixing' => true]);
     $base = Product::create(['category_id' => $category->id, 'sku' => 'BASE-1', 'name' => 'Base Paint', 'selling_price' => 200, 'active' => true]);
     $tint = Product::create(['category_id' => $category->id, 'sku' => 'TINT-1', 'name' => 'Tint Color', 'selling_price' => 50, 'active' => true]);
     Inventory::create(['product_id' => $base->id, 'quantity' => 4]);
@@ -34,10 +34,12 @@ test('custom mixing records estimated components without changing official stock
 
 test('the POS checks out normal and custom mix lines together', function () {
     $user = User::factory()->create();
-    $category = Category::create(['name' => 'POS Paint']);
+    $category = Category::create(['name' => 'POS Paint', 'is_for_mixing' => false]);
+    $mixingCat = Category::create(['name' => 'Mixing Paints', 'is_for_mixing' => true]);
+
     $normal = Product::create(['category_id' => $category->id, 'sku' => 'POS-PAINT', 'name' => 'Retail Paint', 'selling_price' => 80, 'active' => true]);
-    $expensive = Product::create(['category_id' => $category->id, 'sku' => 'POS-BASE', 'name' => 'Premium Base', 'selling_price' => 240, 'active' => true]);
-    $tint = Product::create(['category_id' => $category->id, 'sku' => 'POS-TINT', 'name' => 'Tint', 'selling_price' => 20, 'active' => true]);
+    $expensive = Product::create(['category_id' => $mixingCat->id, 'sku' => 'POS-BASE', 'name' => 'Premium Base', 'selling_price' => 240, 'active' => true]);
+    $tint = Product::create(['category_id' => $mixingCat->id, 'sku' => 'POS-TINT', 'name' => 'Tint', 'selling_price' => 20, 'active' => true]);
     Inventory::create(['product_id' => $normal->id, 'quantity' => 3]);
     Inventory::create(['product_id' => $expensive->id, 'quantity' => 3]);
     Inventory::create(['product_id' => $tint->id, 'quantity' => 3]);
@@ -63,4 +65,19 @@ test('the POS checks out normal and custom mix lines together', function () {
         ->and((float) $expensive->fresh()->inventory->quantity)->toBe(3.0)
         ->and(InventoryMovement::where('product_id', $expensive->id)->count())->toBe(0)
         ->and((float) $sale->items->whereNull('product_id')->first()->unit_price)->toBe(240.0);
+});
+
+test('products not in a mixing category cannot be used for mixing', function () {
+    $user = User::factory()->create();
+    $retailCat = Category::create(['name' => 'Retail Only', 'is_for_mixing' => false]);
+    $mixingCat = Category::create(['name' => 'Mixing Category', 'is_for_mixing' => true]);
+
+    $retailProduct = Product::create(['category_id' => $retailCat->id, 'sku' => 'RET-1', 'name' => 'Retail Product', 'selling_price' => 100, 'active' => true]);
+
+    Volt::actingAs($user)
+        ->test('pages.sales.index')
+        ->set('mixProductId', $retailProduct->id)
+        ->set('mixEstimatedQuantity', '1')
+        ->call('addMixComponent')
+        ->assertHasErrors(['mixProductId']);
 });

@@ -26,9 +26,9 @@ class Product extends Model
     protected function casts(): array
     {
         return [
-            'package_size' => 'decimal:3',
+            'package_size' => 'decimal:2',
             'selling_price' => 'decimal:2',
-            'low_stock_threshold' => 'decimal:3',
+            'low_stock_threshold' => 'decimal:2',
             'active' => 'boolean',
         ];
     }
@@ -56,5 +56,44 @@ class Product extends Model
     public function inventoryMovements(): HasMany
     {
         return $this->hasMany(InventoryMovement::class);
+    }
+
+    public function formattedPackage(): string
+    {
+        $unit = $this->packageUnit?->abbreviation ?? '';
+        $unitName = strtolower($this->packageUnit?->name ?? '');
+
+        if ($unit === 'pail' || str_contains($unitName, 'pail')) {
+            return '16L Pail';
+        }
+
+        if ($unit === 'gal' || str_contains($unitName, 'gallon')) {
+            return '4L Gallon';
+        }
+
+        if ($unit === '1/2 L' || str_contains($unitName, '1/2') || str_contains($unitName, 'pint')) {
+            return '1/2L Pint';
+        }
+
+        if ($unit === '1/4 L' || str_contains($unitName, '1/4')) {
+            return '1/4L Can';
+        }
+
+        if ($unit === '1/8 L' || str_contains($unitName, '1/8')) {
+            return '1/8L Can';
+        }
+
+        if ($unit === 'L' || str_contains($unitName, 'liter')) {
+            return '1L Can';
+        }
+
+        $size = (float) $this->package_size;
+        $formattedSize = $size > 0 ? rtrim(rtrim((string) $size, '0'), '.') : '';
+
+        if ($formattedSize && $unit) {
+            return $formattedSize.' '.$unit;
+        }
+
+        return $unit ?: ($this->packageUnit?->name ?? '—');
     }
 }

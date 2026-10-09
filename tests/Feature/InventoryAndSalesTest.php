@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Inventory;
 use App\Models\InventoryMovement;
@@ -64,4 +65,78 @@ test('a sale cannot exceed available inventory and reduces stock when valid', fu
 
     expect((float) $product->fresh()->inventory->quantity)->toBe(1.0)
         ->and(InventoryMovement::where('product_id', $product->id)->where('type', 'sale')->count())->toBe(1);
+});
+
+test('inventory report calculates balances and exports PDF with date filters', function () {
+    $user = User::factory()->create();
+    $product = inventoryProduct(['sku' => 'REPORT-SKU-1', 'name' => 'Report Paint Item']);
+    $product->inventory->update(['quantity' => 15]);
+
+    // Record movements
+    InventoryMovement::create([
+        'product_id' => $product->id,
+        'user_id' => $user->id,
+        'type' => 'stock_in',
+        'quantity_change' => 20,
+        'quantity_before' => 0,
+        'quantity_after' => 20,
+        'created_at' => now(),
+    ]);
+
+    InventoryMovement::create([
+        'product_id' => $product->id,
+        'user_id' => $user->id,
+        'type' => 'sale',
+        'quantity_change' => -5,
+        'quantity_before' => 20,
+        'quantity_after' => 15,
+        'created_at' => now(),
+    ]);
+
+    $brandA = Brand::create(['name' => 'Brand Alpha', 'active' => true]);
+    $brandB = Brand::create(['name' => 'Brand Beta', 'active' => true]);
+    $product->update(['brand_id' => $brandA->id]);
+
+    $productB = inventoryProduct(['sku' => 'REPORT-SKU-2', 'name' => 'Beta Paint Item', 'brand_id' => $brandB->id]);
+    $productB->inventory->update(['quantity' => 10]);
+
+    // Test livewire inventory report component
+    Volt::actingAs($user)
+        ->test('pages.reports.inventory')
+        ->set('dateFrom', now()->toDateString())
+        ->set('dateTo', now()->toDateString())
+        ->assertSee('REPORT-SKU-1')
+        ->assertSee('Report Paint Item')
+        ->assertSee('Brand Alpha')
+        ->assertSee('Report produced by')
+        ->assertSee($user->name)
+        ->assertSee('20.00')
+        ->assertSee('5.00')
+        ->assertSee('15.00')
+        ->assertDontSee('Retail Price')
+        ->set('brandId', (string) $brandB->id)
+        ->assertSee('REPORT-SKU-2')
+        ->assertDontSee('REPORT-SKU-1');
+
+    // Test PDF export route with brand_id
+    $this->actingAs($user)
+        ->get(route('inventory.pdf', ['from' => now()->toDateString(), 'to' => now()->toDateString(), 'brand_id' => $brandA->id]))
+        ->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+});
+
+test('inventory pages do not display navigation breadcrumbs in header', function () {
+    $user = User::factory()->create();
+
+    Volt::actingAs($user)
+        ->test('pages.inventory.movements')
+        ->assertDontSee('Inventory / Movements');
+
+    Volt::actingAs($user)
+        ->test('pages.inventory.physical-count')
+        ->assertDontSee('Inventory / Physical Count');
+
+    Volt::actingAs($user)
+        ->test('pages.reports.inventory')
+        ->assertDontSee('Inventory / Stock Report');
 });

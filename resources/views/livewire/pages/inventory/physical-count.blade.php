@@ -24,12 +24,17 @@ new #[Layout('layouts.app')] class extends Component {
     public string $countedAt = '';
     public string $notes = '';
 
-    // Filters
+    // Conduct Filters
     public string $search = '';
     public string $brandId = '';
     public string $categoryId = '';
     public string $packageUnitId = '';
     public string $discrepancyFilter = 'all'; // 'all', 'counted', 'discrepancy', 'uncounted'
+
+    // History Filters
+    public string $historySearch = '';
+    public string $historyDateFrom = '';
+    public string $historyDateTo = '';
 
     // Confirmation Modal
     public bool $showConfirmationModal = false;
@@ -75,6 +80,33 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function updatedDiscrepancyFilter(): void
     {
+        $this->resetPage();
+    }
+
+    public function updatedHistorySearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedHistoryDateFrom(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedHistoryDateTo(): void
+    {
+        $this->resetPage();
+    }
+
+    public function resetCountFilters(): void
+    {
+        $this->reset(['search', 'brandId', 'categoryId', 'packageUnitId', 'discrepancyFilter']);
+        $this->resetPage();
+    }
+
+    public function resetHistoryFilters(): void
+    {
+        $this->reset(['historySearch', 'historyDateFrom', 'historyDateTo']);
         $this->resetPage();
     }
 
@@ -167,7 +199,7 @@ new #[Layout('layouts.app')] class extends Component {
                 $inventory = $product->inventory ?: Inventory::create(['product_id' => $product->id, 'quantity' => 0]);
                 $systemQuantity = (float) ($inventory->quantity ?? 0);
                 $physical = (float) $physicalQuantity;
-                $variance = round($physical - $systemQuantity, 3);
+                $variance = round($physical - $systemQuantity, 2);
                 $lineReason = $this->lineReasons[$productId] ?? null;
 
                 $count->items()->create([
@@ -187,7 +219,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                     $reasonText = $lineReason ?: $this->notes;
                     if (empty($reasonText)) {
-                        $reasonText = $variance < 0 ? 'Weekly physical count dipstick shortage' : 'Weekly physical count overage';
+                        $reasonText = $variance < 0 ? 'Physical count shortage adjustment' : 'Physical count overage adjustment';
                     }
 
                     InventoryMovement::create([
@@ -199,7 +231,7 @@ new #[Layout('layouts.app')] class extends Component {
                         'quantity_after' => $physical,
                         'reference_type' => PhysicalInventory::class,
                         'reference_id' => $count->id,
-                        'reference_text' => 'Physical audit #' . $count->id . ' (' . ($variance < 0 ? 'Shortage' : 'Overage') . ')',
+                        'reference_text' => 'Physical audit ' . $count->id . ' (' . ($variance < 0 ? 'Shortage' : 'Overage') . ')',
                         'reason' => $reasonText,
                     ]);
                 }
@@ -263,7 +295,7 @@ new #[Layout('layouts.app')] class extends Component {
                 $statsTotalCounted++;
                 $sys = (float) ($p->inventory?->quantity ?? 0);
                 $phys = (float) $val;
-                $diff = round($phys - $sys, 3);
+                $diff = round($phys - $sys, 2);
                 if ($diff == 0) {
                     $statsMatched++;
                 } elseif ($diff < 0) {
@@ -308,7 +340,7 @@ new #[Layout('layouts.app')] class extends Component {
                 $hasVal = ($val !== '' && $val !== null);
                 $sys = (float) ($p->inventory?->quantity ?? 0);
                 $phys = $hasVal ? (float) $val : 0;
-                $diff = round($phys - $sys, 3);
+                $diff = round($phys - $sys, 2);
 
                 if ($this->discrepancyFilter === 'counted' && $hasVal) {
                     $matchingIds[] = $p->id;
@@ -328,6 +360,16 @@ new #[Layout('layouts.app')] class extends Component {
         $viewingCount = null;
         if ($this->activeTab === 'history') {
             $historyList = PhysicalInventory::with(['user', 'items.product.packageUnit', 'items.product.brand'])
+                ->when($this->historySearch !== '', function ($q) {
+                    $term = '%' . trim($this->historySearch) . '%';
+                    $q->where(function ($sub) use ($term) {
+                        $sub->where('notes', 'like', $term)
+                            ->orWhere('id', 'like', $term)
+                            ->orWhereHas('user', fn ($u) => $u->where('name', 'like', $term));
+                    });
+                })
+                ->when($this->historyDateFrom !== '', fn ($q) => $q->whereDate('counted_at', '>=', $this->historyDateFrom))
+                ->when($this->historyDateTo !== '', fn ($q) => $q->whereDate('counted_at', '<=', $this->historyDateTo))
                 ->latest('counted_at')
                 ->latest('id')
                 ->paginate(15);
@@ -355,30 +397,53 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="space-y-4 w-full min-w-0">
+<div 
+    x-data="{
+        contextMenu: {
+            open: false,
+            x: 0,
+            y: 0,
+            item: null,
+            openAt(x, y, item) {
+                this.item = item;
+                this.x = x;
+                this.y = y;
+                this.open = true;
+                this.$nextTick(() => {
+                    const el = this.$refs.floatingMenu;
+                    if (!el) return;
+                    const r = el.getBoundingClientRect();
+                    if (this.x + r.width > window.innerWidth - 8) {
+                        this.x = Math.max(8, window.innerWidth - r.width - 8);
+                    }
+                    if (this.y + r.height > window.innerHeight - 8) {
+                        this.y = Math.max(8, window.innerHeight - r.height - 8);
+                    }
+                });
+            },
+            openFromButton(event, item) {
+                const btn = event.currentTarget.getBoundingClientRect();
+                this.openAt(btn.right - 176, btn.bottom + 4, item);
+            },
+            openFromEvent(event, item) {
+                this.openAt(event.clientX, event.clientY, item);
+            },
+            close() {
+                this.open = false;
+                this.item = null;
+            }
+        }
+    }"
+    @click.window="contextMenu.close()"
+    @keydown.escape.window="contextMenu.close()"
+    @scroll.window="contextMenu.close()"
+    @resize.window="contextMenu.close()"
+    class="space-y-4 w-full min-w-0"
+>
     <!-- Header -->
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-300 pb-3">
         <div>
-            <div class="flex items-center gap-2">
-                <a href="{{ route('reports.inventory') }}" class="text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-600">Inventory</a>
-                <span class="text-xs text-slate-300">/</span>
-                <span class="text-xs font-semibold uppercase tracking-wider text-slate-700">Physical Count</span>
-            </div>
             <h1 class="font-heading text-xl font-bold tracking-tight text-slate-900">Physical Count</h1>
-        </div>
-        <div class="flex items-center gap-2">
-            <a href="{{ route('inventory.stock-in') }}" class="inline-flex items-center rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 transition">
-                <svg class="mr-1.5 h-3.5 w-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-                Stock In
-            </a>
-            <a href="{{ route('inventory.movements') }}" class="inline-flex items-center rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 transition">
-                <svg class="mr-1.5 h-3.5 w-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                Movements
-            </a>
         </div>
     </div>
 
@@ -409,8 +474,8 @@ new #[Layout('layouts.app')] class extends Component {
     </div>
 
     @if ($activeTab === 'conduct')
-        <!-- Live Audit KPIs & Variance Summary (Right-aligned numbers, bigger light font, neutral labels) -->
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <!-- Live Audit KPIs & Variance Summary -->
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div class="rounded-lg border border-slate-300 bg-white p-3.5 shadow-xs">
                 <p class="text-xs font-normal uppercase tracking-wider text-slate-500">Products Measured</p>
                 <div class="mt-2 flex items-baseline justify-end gap-1">
@@ -427,149 +492,118 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
 
             <div class="rounded-lg border border-slate-300 bg-white p-3.5 shadow-xs">
-                <p class="text-xs font-normal uppercase tracking-wider text-slate-500">Shortages (Dipstick Loss)</p>
+                <p class="text-xs font-normal uppercase tracking-wider text-slate-500">Shortages</p>
                 <div class="mt-2 text-right">
                     <span class="tabular-nums text-3xl sm:text-4xl font-light text-rose-700">{{ $statsShortage }}</span>
                 </div>
             </div>
 
             <div class="rounded-lg border border-slate-300 bg-white p-3.5 shadow-xs">
-                <p class="text-xs font-normal uppercase tracking-wider text-slate-500">Overages (Found Stock)</p>
+                <p class="text-xs font-normal uppercase tracking-wider text-slate-500">Overages</p>
                 <div class="mt-2 text-right">
                     <span class="tabular-nums text-3xl sm:text-4xl font-light text-blue-700">{{ $statsOverage }}</span>
                 </div>
             </div>
-
-            <div class="col-span-2 sm:col-span-1 rounded-lg border border-slate-300 bg-white p-3.5 shadow-xs flex flex-col justify-center">
-                <button 
-                    wire:click="promptConfirmation" 
-                    type="button" 
-                    class="w-full rounded bg-[#00a3cc] px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-white shadow-xs hover:bg-[#008fb3] transition flex items-center justify-center gap-1.5"
-                >
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                    Confirm Count
-                </button>
-            </div>
         </div>
 
-        <!-- Main Workspace with Left Side Filter Panel & Live Count Table -->
-        <div class="flex flex-col lg:flex-row gap-4 items-start">
-            <!-- Left Filter & Configuration Panel -->
-            <aside class="w-full lg:w-60 shrink-0 rounded-lg border border-slate-300 bg-white p-3.5 shadow-xs space-y-3.5">
-                <div class="flex items-center justify-between border-b border-slate-200 pb-2">
-                    <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Audit Setup & Filters</span>
+        <!-- Streamlined Horizontal Audit Setup & Quick Actions Bar -->
+        <div class="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-3 flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <label for="countedAt" class="text-xs font-semibold text-slate-700 whitespace-nowrap">Audit Date:</label>
+                        <input wire:model="countedAt" id="countedAt" type="date" class="rounded border border-slate-300 px-2.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500" required />
+                    </div>
+                    <div class="flex items-center gap-2 flex-1 min-w-[200px]">
+                        <label for="notes" class="text-xs font-semibold text-slate-700 whitespace-nowrap">Remarks:</label>
+                        <input wire:model="notes" id="notes" type="text" placeholder="e.g. Weekly dipstick inventory audit..." class="w-full rounded border border-slate-300 px-2.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+                    </div>
                 </div>
-
-                <!-- Date -->
-                <div>
-                    <label for="countedAt" class="block text-[11px] font-semibold text-slate-600 mb-1">Audit / Count Date</label>
-                    <input wire:model="countedAt" id="countedAt" type="date" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500" required />
-                    <x-input-error :messages="$errors->get('countedAt')" class="mt-1" />
-                </div>
-
-                <!-- Notes -->
-                <div>
-                    <label for="notes" class="block text-[11px] font-semibold text-slate-600 mb-1">Audit Notes / Remarks</label>
-                    <textarea 
-                        wire:model="notes" 
-                        id="notes" 
-                        rows="2" 
-                        placeholder="e.g. Weekly dipstick inventory..." 
-                        class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
-                    ></textarea>
-                </div>
-
-                <!-- Batch Actions -->
-                <div class="border-t border-slate-200 pt-2 space-y-1.5">
-                    <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Quick Actions:</span>
+                <div class="flex items-center gap-2">
                     <button 
                         wire:click="fillFromSystemStock" 
                         wire:confirm="Pre-fill all physical count fields with current system stock balances?"
                         type="button" 
-                        class="w-full inline-flex items-center justify-center rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 transition"
+                        class="inline-flex items-center rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-xs transition"
+                        title="Copy current system stock balances to physical count inputs"
                     >
+                        <svg class="mr-1 h-3.5 w-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                        </svg>
                         Pre-fill System Stock
                     </button>
                     <button 
                         wire:click="clearAllCounts" 
                         wire:confirm="Are you sure you want to clear all entered physical count inputs?"
                         type="button" 
-                        class="w-full inline-flex items-center justify-center rounded border border-rose-300 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 shadow-xs hover:bg-rose-50 transition"
+                        class="inline-flex items-center rounded border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 shadow-xs transition"
                     >
-                        Reset All Counts
+                        Reset Counts
                     </button>
                 </div>
+            </div>
+        </div>
 
-                <!-- Filter Inputs -->
-                <div class="border-t border-slate-200 pt-2 space-y-2.5">
-                    <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Filters:</span>
-
-                    <!-- Search -->
-                    <div>
-                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Search Product / SKU</label>
-                        <input 
-                            wire:model.live.debounce.300ms="search" 
-                            type="search" 
-                            placeholder="Name or SKU..." 
-                            class="w-full rounded border border-slate-300 px-2.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
-                        />
-                    </div>
-
-                    <!-- Brand -->
-                    <div>
-                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Brand</label>
-                        <select wire:model.live="brandId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
-                            <option value="">All Brands</option>
-                            @foreach ($brands as $brand)
-                                <option value="{{ $brand->id }}">{{ $brand->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <!-- Category -->
-                    <div>
-                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Category</label>
-                        <select wire:model.live="categoryId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
-                            <option value="">All Categories</option>
-                            @foreach ($categories as $category)
-                                <option value="{{ $category->id }}">{{ $category->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <!-- Discrepancy Status -->
-                    <div>
-                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Status</label>
-                        <select wire:model.live="discrepancyFilter" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
-                            <option value="all">All Products</option>
-                            <option value="discrepancy">Discrepancies Only (±)</option>
-                            <option value="counted">Counted Items Only</option>
-                            <option value="uncounted">Uncounted Items (Empty)</option>
-                        </select>
-                    </div>
+        <!-- Table Container with Seamless Top Filters -->
+        <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+            <!-- Horizontal Filter Bar -->
+            <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2.5">
+                <div class="w-56">
+                    <input 
+                        wire:model.live.debounce.300ms="search" 
+                        type="search" 
+                        placeholder="Search SKU or product name..." 
+                        class="w-full rounded border border-slate-300 px-2.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+                    />
                 </div>
-            </aside>
 
-            <!-- Table & Action Area -->
-            <div class="flex-1 min-w-0 w-full space-y-4">
-                <!-- Count Entry Grid Table -->
-                <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-                    <div class="overflow-x-auto">
-                        <table class="w-full border-collapse border border-slate-300 text-xs">
-                    <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
+                <div class="w-40">
+                    <select wire:model.live="brandId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                        <option value="">All Brands</option>
+                        @foreach ($brands as $brand)
+                            <option value="{{ $brand->id }}">{{ $brand->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="w-40">
+                    <select wire:model.live="categoryId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                        <option value="">All Categories</option>
+                        @foreach ($categories as $category)
+                            <option value="{{ $category->id }}">{{ $category->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="w-44">
+                    <select wire:model.live="discrepancyFilter" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                        <option value="all">All Products</option>
+                        <option value="discrepancy">Discrepancies Only (±)</option>
+                        <option value="counted">Counted Items Only</option>
+                        <option value="uncounted">Uncounted Items (Empty)</option>
+                    </select>
+                </div>
+
+                <button wire:click="resetCountFilters" type="button" class="text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium ml-auto">
+                    Reset
+                </button>
+            </div>
+
+            <!-- Count Entry Grid Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse border border-slate-300 text-xs">
+                    <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                         <tr>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Brand</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[200px]">Product Name</th>
                             <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28">SKU</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[200px]">Product Name</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-16">Unit</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Brand</th>
                             <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Category</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-16">Unit</th>
                             <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-24">System Stock</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-32 bg-slate-200/60">Physical Stock</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Variance</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-24">Status</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left">Dipstick / Adjustment Reason</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-28 bg-slate-200/50">Physical Count</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-20">Variance</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-20">Status</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[160px]">Remarks / Note</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200">
@@ -580,90 +614,63 @@ new #[Layout('layouts.app')] class extends Component {
                                 $val = $counts[$product->id] ?? '';
                                 $hasCount = ($val !== '' && $val !== null);
                                 $physicalQty = $hasCount ? (float) $val : null;
-                                $variance = $hasCount ? round($physicalQty - $systemQty, 3) : null;
+                                $variance = $hasCount ? round($physicalQty - $systemQty, 2) : null;
                             @endphp
-                            <tr class="hover:bg-slate-50 transition-colors {{ $hasCount && $variance != 0 ? ($variance < 0 ? 'bg-rose-50/20' : 'bg-blue-50/20') : '' }}" wire:key="phys-prod-{{ $product->id }}">
-                                <!-- Brand Column -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
-                                    {{ $product->brand?->name ?? '—' }}
+                            <tr class="hover:bg-slate-50 transition-colors" wire:key="phys-prod-{{ $product->id }}">
+                                <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-600 whitespace-nowrap font-mono">
+                                    {{ $product->sku }}
                                 </td>
-
-                                <!-- Product Name Column (Fits long product names) -->
                                 <td class="border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-900 min-w-[200px] max-w-md break-words whitespace-normal" title="{{ $product->name }}">
                                     {{ $product->name }}
                                 </td>
-
-                                <!-- Separate SKU Column -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-600 whitespace-nowrap">
-                                    {{ $product->sku }}
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-600 whitespace-nowrap">
+                                    {{ $unit }}
                                 </td>
-
-                                <!-- Separate Category Column -->
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
+                                    {{ $product->brand?->name ?? '—' }}
+                                </td>
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 whitespace-nowrap">
                                     {{ $product->category?->name ?? '—' }}
                                 </td>
-
-                                <!-- Package Unit -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 whitespace-nowrap">
-                                    {{ $unit }}
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
+                                    {{ number_format($systemQty, 2) }}
                                 </td>
-
-                                <!-- System Stock -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-600 whitespace-nowrap">
-                                    {{ number_format($systemQty, 3) }}
-                                </td>
-
-                                <!-- Physical Stock Input -->
-                                <td class="border border-slate-200 px-2 py-1 bg-slate-50/50">
+                                <td class="border border-slate-200 px-2 py-1 bg-slate-50/40 text-center">
                                     <input 
                                         wire:model.live.debounce.300ms="counts.{{ $product->id }}" 
                                         type="number" 
-                                        step="0.001" 
+                                        step="0.01" 
                                         min="0" 
                                         placeholder="Skip" 
-                                        class="w-full rounded border-slate-300 py-1 px-2 text-xs tabular-nums font-bold focus:border-[#00a3cc] focus:ring-[#00a3cc] {{ $hasCount ? ($variance == 0 ? 'text-emerald-700 border-emerald-300' : ($variance < 0 ? 'text-rose-700 border-rose-300' : 'text-blue-700 border-blue-300')) : '' }}"
+                                        class="w-24 text-center rounded border border-slate-300 py-1 px-2 text-xs tabular-nums font-bold focus:border-[#00a3cc] focus:ring-[#00a3cc] {{ $hasCount ? ($variance == 0 ? 'text-emerald-700 border-emerald-300' : ($variance < 0 ? 'text-rose-700 border-rose-300' : 'text-blue-700 border-blue-300')) : '' }}"
                                     />
                                 </td>
-
-                                <!-- Variance Display -->
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold whitespace-nowrap">
                                     @if ($hasCount)
                                         <span class="{{ $variance > 0 ? 'text-blue-700' : ($variance < 0 ? 'text-rose-700' : 'text-emerald-700') }}">
-                                             {{ $variance > 0 ? '+' : '' }}{{ number_format($variance, 3) }}
+                                            {{ $variance > 0 ? '+' : '' }}{{ number_format($variance, 2) }}
                                         </span>
                                     @else
                                         <span class="text-slate-300">—</span>
                                     @endif
                                 </td>
-
-                                <!-- Status Badge -->
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
                                     @if (!$hasCount)
-                                        <span class="inline-block rounded border border-slate-300 text-slate-500 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Uncounted
-                                        </span>
+                                        <span class="text-[10px] font-bold uppercase text-slate-400">Uncounted</span>
                                     @elseif ($variance == 0)
-                                        <span class="inline-block rounded border border-emerald-600 text-emerald-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Match
-                                        </span>
+                                        <span class="text-[10px] font-bold uppercase text-emerald-700">Match</span>
                                     @elseif ($variance < 0)
-                                        <span class="inline-block rounded border border-rose-600 text-rose-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Shortage
-                                        </span>
+                                        <span class="text-[10px] font-bold uppercase text-rose-700">Shortage</span>
                                     @else
-                                        <span class="inline-block rounded border border-blue-600 text-blue-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Overage
-                                        </span>
+                                        <span class="text-[10px] font-bold uppercase text-blue-700">Overage</span>
                                     @endif
                                 </td>
-
-                                <!-- Line Reason / Dipstick Note -->
                                 <td class="border border-slate-200 px-2 py-1">
                                     <input 
                                         wire:model="lineReasons.{{ $product->id }}" 
                                         type="text" 
-                                        placeholder="Optional line note (e.g. 0.5 gal dipstick remaining)" 
-                                        class="w-full rounded border-slate-200 py-1 px-2 text-xs focus:border-[#00a3cc] focus:ring-[#00a3cc]"
+                                        placeholder="Line note..." 
+                                        class="w-full rounded border border-slate-200 py-1 px-2 text-xs focus:border-[#00a3cc] focus:ring-[#00a3cc]"
                                     />
                                 </td>
                             </tr>
@@ -709,13 +716,11 @@ new #[Layout('layouts.app')] class extends Component {
                 </button>
             </div>
         </div>
-            </div>
-        </div>
 
         <!-- Discrepancy Review & Confirmation Modal -->
         @if ($showConfirmationModal)
             <div class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-xs">
-                <div class="w-full max-w-3xl rounded-lg bg-white shadow-2xl border border-slate-300 overflow-hidden">
+                <div class="w-full max-w-3xl rounded-lg bg-white shadow-2xl border border-slate-300 overflow-hidden text-xs">
                     <div class="border-b border-slate-200 bg-slate-100 p-3.5 flex items-center justify-between">
                         <div class="flex items-center gap-2">
                             <div class="rounded border border-amber-300 bg-amber-50 p-1.5 text-amber-700">
@@ -745,7 +750,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                     <div class="p-4 space-y-3.5 max-h-[60vh] overflow-y-auto">
                         <div class="rounded border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900">
-                            <span class="font-bold">Important Notice:</span> Confirming this audit will permanently replace the system inventory balances of all entered items with physical counts. Any discrepancies will automatically generate <span class="font-semibold">`physical_adjustment`</span> audit movements.
+                            <span class="font-bold">Important Notice:</span> Confirming this audit will update the system inventory balances of all entered items with physical counts. Any discrepancies will automatically generate physical adjustment movement records.
                         </div>
 
                         <!-- Summary Cards -->
@@ -755,11 +760,11 @@ new #[Layout('layouts.app')] class extends Component {
                                 <span class="tabular-nums text-sm font-bold text-slate-900">{{ $statsTotalCounted }} items</span>
                             </div>
                             <div class="rounded border border-rose-300 bg-rose-50/50 p-2.5 text-center shadow-xs">
-                                <span class="text-[10px] uppercase tracking-wider text-rose-700 font-semibold block">Shortages (Dipstick Loss)</span>
+                                <span class="text-[10px] uppercase tracking-wider text-rose-700 font-semibold block">Shortages</span>
                                 <span class="tabular-nums text-sm font-bold text-rose-700">{{ $statsShortage }} items</span>
                             </div>
                             <div class="rounded border border-blue-300 bg-blue-50/50 p-2.5 text-center shadow-xs">
-                                <span class="text-[10px] uppercase tracking-wider text-blue-700 font-semibold block">Overages (Additions)</span>
+                                <span class="text-[10px] uppercase tracking-wider text-blue-700 font-semibold block">Overages</span>
                                 <span class="tabular-nums text-sm font-bold text-blue-700">{{ $statsOverage }} items</span>
                             </div>
                         </div>
@@ -772,54 +777,50 @@ new #[Layout('layouts.app')] class extends Component {
                                 </h4>
                                 <div class="overflow-x-auto border border-slate-300">
                                     <table class="w-full border-collapse border border-slate-300 text-xs">
-                                        <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
+                                        <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                                             <tr>
-                                                <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24">Brand</th>
-                                                <th class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[180px]">Product Name</th>
                                                 <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24">SKU</th>
-                                                <th class="border border-slate-300 px-2.5 py-1.5 text-left w-16">Unit</th>
+                                                <th class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[180px]">Product Name</th>
+                                                <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16">Unit</th>
+                                                <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24">Brand</th>
                                                 <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24">System</th>
                                                 <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Physical</th>
                                                 <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Variance</th>
                                                 <th class="border border-slate-300 px-2.5 py-1.5 text-center w-24">Type</th>
                                             </tr>
                                         </thead>
-                                        <tbody class="divide-y divide-slate-200 font-medium">
+                                        <tbody class="divide-y divide-slate-200">
                                             @foreach ($discrepantItems as $disc)
                                                 @php
                                                     $u = $disc['product']->packageUnit?->abbreviation ?? 'pcs';
                                                 @endphp
                                                 <tr class="hover:bg-slate-50">
-                                                    <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
-                                                        {{ $disc['product']->brand?->name ?? '—' }}
+                                                    <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-600 whitespace-nowrap font-mono">
+                                                        {{ $disc['product']->sku }}
                                                     </td>
                                                     <td class="border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-900 min-w-[180px] max-w-sm break-words whitespace-normal" title="{{ $disc['product']->name }}">
                                                         {{ $disc['product']->name }}
                                                     </td>
-                                                    <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-600 whitespace-nowrap">
-                                                        {{ $disc['product']->sku }}
-                                                    </td>
-                                                    <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 whitespace-nowrap">
+                                                    <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-600 whitespace-nowrap">
                                                         {{ $u }}
                                                     </td>
+                                                    <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
+                                                        {{ $disc['product']->brand?->name ?? '—' }}
+                                                    </td>
                                                     <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-600 whitespace-nowrap">
-                                                        {{ number_format($disc['system'], 3) }}
+                                                        {{ number_format($disc['system'], 2) }}
                                                     </td>
                                                     <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900 whitespace-nowrap">
-                                                        {{ number_format($disc['physical'], 3) }}
+                                                        {{ number_format($disc['physical'], 2) }}
                                                     </td>
                                                     <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold whitespace-nowrap {{ $disc['variance'] < 0 ? 'text-rose-700' : 'text-blue-700' }}">
-                                                        {{ $disc['variance'] > 0 ? '+' : '' }}{{ number_format($disc['variance'], 3) }}
+                                                        {{ $disc['variance'] > 0 ? '+' : '' }}{{ number_format($disc['variance'], 2) }}
                                                     </td>
                                                     <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
                                                         @if ($disc['type'] === 'shortage')
-                                                            <span class="inline-block rounded border border-rose-600 text-rose-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase">
-                                                                Shortage
-                                                            </span>
+                                                            <span class="text-[10px] font-bold uppercase text-rose-700">Shortage</span>
                                                         @else
-                                                            <span class="inline-block rounded border border-blue-600 text-blue-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase">
-                                                                Overage
-                                                            </span>
+                                                            <span class="text-[10px] font-bold uppercase text-blue-700">Overage</span>
                                                         @endif
                                                     </td>
                                                 </tr>
@@ -856,87 +857,119 @@ new #[Layout('layouts.app')] class extends Component {
         @endif
     @else
         <!-- Past Audit History Tab -->
-        <div class="space-y-4">
-            <div class="overflow-hidden border border-slate-300 bg-white shadow-xs">
-                <div class="overflow-x-auto">
-                    <table class="w-full border-collapse border border-slate-300 text-xs">
-                        <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
-                            <tr>
-                                <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-20">Audit ID</th>
-                                <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Count Date</th>
-                                <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-36">Staff Responsible</th>
-                                <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-28">Items Counted</th>
-                                <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-28">Discrepancies</th>
-                                <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left">Session Remarks</th>
-                                <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-28">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-200">
-                            @forelse ($historyList as $audit)
-                                @php
-                                    $discrepancyCount = $audit->items->where('variance', '!=', 0)->count();
-                                @endphp
-                                <tr class="hover:bg-slate-50 transition-colors">
-                                    <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-500">#{{ $audit->id }}</td>
-                                    <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums font-semibold text-slate-900 whitespace-nowrap">{{ $audit->counted_at->format('M d, Y') }}</td>
-                                    <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">{{ $audit->user?->name ?? 'System' }}</td>
-                                    <td class="border border-slate-200 px-2.5 py-1.5 text-center tabular-nums text-slate-700">
-                                        {{ $audit->items->count() }} items
-                                    </td>
-                                    <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
-                                        @if ($discrepancyCount > 0)
-                                            <span class="inline-block rounded border border-rose-600 text-rose-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase">
-                                                {{ $discrepancyCount }} adjusted
-                                            </span>
-                                        @else
-                                            <span class="inline-block rounded border border-emerald-600 text-emerald-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase">
-                                                All Matched
-                                            </span>
-                                        @endif
-                                    </td>
-                                    <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600">{{ $audit->notes ?? '—' }}</td>
-                                    <td class="border border-slate-200 px-2.5 py-1.5 text-right whitespace-nowrap">
-                                        <button 
-                                            wire:click="viewHistory({{ $audit->id }})" 
-                                            type="button" 
-                                            class="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-xs transition"
-                                        >
-                                            View Breakdown
-                                        </button>
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="7" class="border border-slate-200 px-6 py-12 text-center text-slate-500">
-                                        <div class="mx-auto flex flex-col items-center justify-center">
-                                            <svg class="h-8 w-8 text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                                            </svg>
-                                            <p class="text-xs font-semibold text-slate-700">No physical count audits recorded yet.</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
+        <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+            <!-- Horizontal Filter Bar -->
+            <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2.5">
+                <div class="w-64">
+                    <input 
+                        wire:model.live.debounce.300ms="historySearch" 
+                        type="search" 
+                        placeholder="Search ID, staff, remarks..." 
+                        class="w-full rounded border border-slate-300 px-2.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+                    />
                 </div>
-                @if ($historyList && $historyList->hasPages())
-                    <div class="border-t border-slate-300 px-3 py-2 bg-slate-50">
-                        {{ $historyList->links() }}
-                    </div>
-                @endif
+
+                <div class="flex items-center gap-1.5 text-xs text-slate-600">
+                    <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">From:</span>
+                    <input wire:model.live="historyDateFrom" type="date" class="rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+                </div>
+
+                <div class="flex items-center gap-1.5 text-xs text-slate-600">
+                    <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">To:</span>
+                    <input wire:model.live="historyDateTo" type="date" class="rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+                </div>
+
+                <button wire:click="resetHistoryFilters" type="button" class="text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium ml-auto">
+                    Reset
+                </button>
             </div>
+
+            <!-- History Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse border border-slate-300 text-xs">
+                    <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
+                        <tr>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-20">Audit ID</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Count Date</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-36">Staff Responsible</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-28">Items Counted</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-28">Discrepancies</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left">Session Remarks</th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-16">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        @forelse ($historyList as $audit)
+                            @php
+                                $discrepancyCount = $audit->items->where('variance', '!=', 0)->count();
+                            @endphp
+                            <tr 
+                                @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $audit->id }} })"
+                                class="hover:bg-slate-50 transition-colors cursor-default"
+                                wire:key="audit-row-{{ $audit->id }}"
+                            >
+                                <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-700 font-mono text-center">{{ $audit->id }}</td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums font-semibold text-slate-900 whitespace-nowrap">{{ $audit->counted_at->format('M d, Y') }}</td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">{{ $audit->user?->name ?? 'System' }}</td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-center tabular-nums text-slate-700">
+                                    {{ $audit->items->count() }} items
+                                </td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                                    @if ($discrepancyCount > 0)
+                                        <span class="text-[10px] font-bold uppercase text-rose-700">
+                                            {{ $discrepancyCount }} adjusted
+                                        </span>
+                                    @else
+                                        <span class="text-[10px] font-bold uppercase text-emerald-700">
+                                            All Matched
+                                        </span>
+                                    @endif
+                                </td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600">{{ $audit->notes ?? '—' }}</td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                                    <button 
+                                        @click.stop="contextMenu.openFromButton($event, { id: {{ $audit->id }} })" 
+                                        type="button" 
+                                        class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
+                                        title="Options"
+                                    >
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+                                        </svg>
+                                    </button>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="7" class="border border-slate-200 px-6 py-12 text-center text-slate-500">
+                                    <div class="mx-auto flex flex-col items-center justify-center">
+                                        <svg class="h-8 w-8 text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                        </svg>
+                                        <p class="text-xs font-semibold text-slate-700">No physical count audits recorded yet.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+            @if ($historyList && $historyList->hasPages())
+                <div class="border-t border-slate-300 px-3 py-2 bg-slate-50">
+                    {{ $historyList->links() }}
+                </div>
+            @endif
         </div>
     @endif
 
     <!-- History Audit Breakdown Modal -->
     @if ($viewingHistoryId && $viewingCount)
         <div class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-xs">
-            <div class="w-full max-w-3xl rounded-lg bg-white shadow-2xl border border-slate-300 overflow-hidden">
+            <div class="w-full max-w-3xl rounded-lg bg-white shadow-2xl border border-slate-300 overflow-hidden text-xs">
                 <div class="border-b border-slate-200 bg-slate-100 p-3.5 flex items-center justify-between">
                     <div>
                         <h3 class="font-heading text-sm font-bold text-slate-900">
-                            Physical Inventory Audit #{{ $viewingCount->id }}
+                            Physical Inventory Audit {{ $viewingCount->id }}
                         </h3>
                         <p class="text-[11px] text-slate-500">
                             Counted on <span class="tabular-nums font-semibold text-slate-800">{{ $viewingCount->counted_at->format('F d, Y') }}</span> by <span class="font-semibold text-slate-800">{{ $viewingCount->user?->name ?? 'System' }}</span>
@@ -962,12 +995,12 @@ new #[Layout('layouts.app')] class extends Component {
                 <div class="max-h-96 overflow-y-auto p-3.5">
                     <div class="overflow-x-auto border border-slate-300">
                         <table class="w-full border-collapse border border-slate-300 text-xs">
-                            <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
+                            <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                                 <tr>
-                                    <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24">Brand</th>
+                                    <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24">SKU</th>
                                     <th class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[180px]">Product Name</th>
-                                    <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28">SKU</th>
-                                    <th class="border border-slate-300 px-2.5 py-1.5 text-left w-16">Unit</th>
+                                    <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16">Unit</th>
+                                    <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24">Brand</th>
                                     <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24">System Qty</th>
                                     <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Physical</th>
                                     <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Variance</th>
@@ -981,14 +1014,14 @@ new #[Layout('layouts.app')] class extends Component {
                                         $unit = $item->product?->packageUnit?->abbreviation ?? '';
                                     @endphp
                                     <tr class="hover:bg-slate-50">
-                                        <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">{{ $item->product?->brand?->name ?? '—' }}</td>
+                                        <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-600 whitespace-nowrap font-mono">{{ $item->product?->sku ?? '—' }}</td>
                                         <td class="border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-900 min-w-[180px] max-w-sm break-words whitespace-normal" title="{{ $item->product?->name }}">{{ $item->product?->name ?? 'Product' }}</td>
-                                        <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-600 whitespace-nowrap">{{ $item->product?->sku ?? '—' }}</td>
-                                        <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 whitespace-nowrap">{{ $unit }}</td>
-                                        <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-600 whitespace-nowrap">{{ number_format((float) $item->system_quantity, 3) }}</td>
-                                        <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900 whitespace-nowrap">{{ number_format((float) $item->physical_quantity, 3) }}</td>
+                                        <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-600 whitespace-nowrap">{{ $unit }}</td>
+                                        <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">{{ $item->product?->brand?->name ?? '—' }}</td>
+                                        <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-600 whitespace-nowrap">{{ number_format((float) $item->system_quantity, 2) }}</td>
+                                        <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900 whitespace-nowrap">{{ number_format((float) $item->physical_quantity, 2) }}</td>
                                         <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold whitespace-nowrap {{ $var < 0 ? 'text-rose-700' : ($var > 0 ? 'text-blue-700' : 'text-emerald-700') }}">
-                                            {{ $var > 0 ? '+' : '' }}{{ number_format($var, 3) }}
+                                            {{ $var > 0 ? '+' : '' }}{{ number_format($var, 2) }}
                                         </td>
                                         <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700">{{ $item->reason ?? '—' }}</td>
                                     </tr>
@@ -1013,4 +1046,37 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </div>
     @endif
+
+    <!-- Global Floating Context Menu -->
+    <div 
+        x-ref="floatingMenu"
+        x-show="contextMenu.open" 
+        x-cloak
+        x-transition:enter="transition ease-out duration-100"
+        x-transition:enter-start="opacity-0 scale-95"
+        x-transition:enter-end="opacity-100 scale-100"
+        x-transition:leave="transition ease-in duration-75"
+        x-transition:leave-start="opacity-100 scale-100"
+        x-transition:leave-end="opacity-0 scale-95"
+        :style="`position: fixed; left: ${contextMenu.x}px; top: ${contextMenu.y}px; z-index: 9999;`"
+        class="w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"
+        style="display: none;"
+    >
+        <button 
+            @click="if (contextMenu.item) { $wire.viewHistory(contextMenu.item.id); contextMenu.close(); }" 
+            type="button" 
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+        >
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            <span>View Breakdown</span>
+        </button>
+        <button 
+            @click="if (contextMenu.item) { navigator.clipboard.writeText(contextMenu.item.id); contextMenu.close(); }" 
+            type="button" 
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+        >
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+            <span>Copy Audit ID</span>
+        </button>
+    </div>
 </div>

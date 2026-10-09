@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\InventoryReportController;
 use App\Http\Controllers\SaleReceiptController;
+use App\Http\Controllers\SalesReportPdfController;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
@@ -21,12 +22,24 @@ Volt::route('/products', 'pages.products.index')
     ->name('products.index');
 
 Volt::route('/sales/history', 'pages.sales.history')
-    ->middleware(['auth', 'verified', 'role:dev,admin,manager'])
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])
     ->name('sales.history');
 
 Volt::route('/sales/checkout', 'pages.sales.checkout')
     ->middleware(['auth', 'verified'])
     ->name('sales.checkout');
+
+Volt::route('/sales/quotations', 'pages.sales.quotations')
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager,mixer'])
+    ->name('sales.quotations');
+
+Volt::route('/reports/sales', 'pages.reports.sales')
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])
+    ->name('reports.sales');
+
+Route::get('/reports/sales/pdf', SalesReportPdfController::class)
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])
+    ->name('reports.sales.pdf');
 
 Route::get('/sales/{sale}/receipt', SaleReceiptController::class)
     ->middleware(['auth', 'verified'])
@@ -60,38 +73,37 @@ Route::get('/inventory/pdf', InventoryReportController::class)
 // Aliases for compatibility
 Route::redirect('/reports/inventory', '/inventory')->name('reports.inventory');
 Route::get('/reports/inventory/pdf', InventoryReportController::class)->middleware(['auth', 'verified'])->name('reports.inventory.pdf');
-Route::redirect('/reports/sales', '/sales/history')->name('reports.sales');
 Route::redirect('/reports/mixing', '/sales')->name('reports.mixing');
 
-// Administrative Section (dev, admin)
+// Administrative Section (superadmin, admin)
 Volt::route('/audit', 'pages.audit.index')
-    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->middleware(['auth', 'verified', 'role:superadmin,admin'])
     ->name('audit.index');
 
 Volt::route('/user-access', 'pages.user-access.index')
-    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->middleware(['auth', 'verified', 'role:superadmin,admin'])
     ->name('user-access.index');
 
 Volt::route('/admin/backup', 'pages.admin.backup')
-    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->middleware(['auth', 'verified', 'role:superadmin,admin'])
     ->name('backup.index');
 
-// Developer Tools Section (dev only)
+// Developer Tools Section (superadmin only)
 Volt::route('/dev/troubleshooting', 'pages.dev.troubleshooting')
-    ->middleware(['auth', 'verified', 'role:dev'])
+    ->middleware(['auth', 'verified', 'role:superadmin'])
     ->name('dev.troubleshooting');
 
-// Settings Section (dev, admin)
+// Settings Section (superadmin, admin)
 Volt::route('/settings/brands', 'pages.references.brands')
-    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->middleware(['auth', 'verified', 'role:superadmin,admin'])
     ->name('references.brands');
 
 Volt::route('/settings/categories', 'pages.references.categories')
-    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->middleware(['auth', 'verified', 'role:superadmin,admin'])
     ->name('references.categories');
 
 Volt::route('/settings/package-units', 'pages.references.package-units')
-    ->middleware(['auth', 'verified', 'role:dev,admin'])
+    ->middleware(['auth', 'verified', 'role:superadmin,admin'])
     ->name('references.package-units');
 
 // Legacy route aliases for reference settings

@@ -12,7 +12,7 @@ class MixingTransaction extends Model
 
     protected function casts(): array
     {
-        return ['resulting_quantity' => 'decimal:3'];
+        return ['resulting_quantity' => 'decimal:2'];
     }
 
     public function sale(): BelongsTo

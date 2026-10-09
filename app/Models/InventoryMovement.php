@@ -24,9 +24,9 @@ class InventoryMovement extends Model
     protected function casts(): array
     {
         return [
-            'quantity_change' => 'decimal:3',
-            'quantity_before' => 'decimal:3',
-            'quantity_after' => 'decimal:3',
+            'quantity_change' => 'decimal:2',
+            'quantity_before' => 'decimal:2',
+            'quantity_after' => 'decimal:2',
         ];
     }
 

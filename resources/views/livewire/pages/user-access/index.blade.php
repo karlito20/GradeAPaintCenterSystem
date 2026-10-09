@@ -81,8 +81,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function createUser(): void
     {
-        $allowedRoles = auth()->user()->role === 'dev' 
-            ? ['dev', 'admin', 'manager', 'mixer'] 
+        $allowedRoles = auth()->user()->role === 'superadmin' 
+            ? ['superadmin', 'admin', 'manager', 'mixer'] 
             : ['admin', 'manager', 'mixer'];
 
         $this->validate([
@@ -143,13 +143,13 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         $user = User::findOrFail($this->editingUserId);
-        $allowedRoles = auth()->user()->role === 'dev' 
-            ? ['dev', 'admin', 'manager', 'mixer'] 
+        $allowedRoles = auth()->user()->role === 'superadmin' 
+            ? ['superadmin', 'admin', 'manager', 'mixer'] 
             : ['admin', 'manager', 'mixer'];
 
-        // If target user is dev and current user is not dev, forbid editing
-        if ($user->role === 'dev' && auth()->user()->role !== 'dev') {
-            abort(403, 'Unauthorized to modify developer accounts.');
+        // If target user is superadmin and current user is not superadmin, forbid editing
+        if ($user->role === 'superadmin' && auth()->user()->role !== 'superadmin') {
+            abort(403, 'Unauthorized to modify superadmin accounts.');
         }
 
         $this->validate([
@@ -193,8 +193,8 @@ new #[Layout('layouts.app')] class extends Component {
     public function openResetPasswordModal(int $id): void
     {
         $user = User::findOrFail($id);
-        if ($user->role === 'dev' && auth()->user()->role !== 'dev') {
-            abort(403, 'Unauthorized to reset developer credentials.');
+        if ($user->role === 'superadmin' && auth()->user()->role !== 'superadmin') {
+            abort(403, 'Unauthorized to reset superadmin credentials.');
         }
 
         $this->resetUserId = $user->id;
@@ -219,7 +219,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         $user = User::findOrFail($this->resetUserId);
-        if ($user->role === 'dev' && auth()->user()->role !== 'dev') {
+        if ($user->role === 'superadmin' && auth()->user()->role !== 'superadmin') {
             abort(403);
         }
 
@@ -269,7 +269,7 @@ new #[Layout('layouts.app')] class extends Component {
             }
         }
 
-        if ($user->role === 'dev' && auth()->user()->role !== 'dev') {
+        if ($user->role === 'superadmin' && auth()->user()->role !== 'superadmin') {
             abort(403);
         }
 
@@ -328,10 +328,10 @@ new #[Layout('layouts.app')] class extends Component {
     // Retain legacy method for backward compatibility
     public function changeRole(int $id, string $role): void
     {
-        abort_unless(in_array($role, ['dev', 'admin', 'manager', 'mixer'], true), 422);
+        abort_unless(in_array($role, ['superadmin', 'admin', 'manager', 'mixer'], true), 422);
         $user = User::findOrFail($id);
 
-        if ($user->role === 'dev' && auth()->user()->role !== 'dev') {
+        if ($user->role === 'superadmin' && auth()->user()->role !== 'superadmin') {
             abort(403);
         }
 
@@ -372,16 +372,54 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<div class="space-y-4 w-full min-w-0">
+<div 
+    x-data="{
+        contextMenu: {
+            open: false,
+            x: 0,
+            y: 0,
+            item: null,
+            openAt(x, y, item) {
+                this.item = item;
+                this.x = x;
+                this.y = y;
+                this.open = true;
+                this.$nextTick(() => {
+                    const el = this.$refs.floatingMenu;
+                    if (!el) return;
+                    const r = el.getBoundingClientRect();
+                    if (this.x + r.width > window.innerWidth - 8) {
+                        this.x = Math.max(8, window.innerWidth - r.width - 8);
+                    }
+                    if (this.y + r.height > window.innerHeight - 8) {
+                        this.y = Math.max(8, window.innerHeight - r.height - 8);
+                    }
+                });
+            },
+            openFromButton(event, item) {
+                const btn = event.currentTarget.getBoundingClientRect();
+                this.openAt(btn.right - 176, btn.bottom + 4, item);
+            },
+            openFromEvent(event, item) {
+                this.openAt(event.clientX, event.clientY, item);
+            },
+            close() {
+                this.open = false;
+                this.item = null;
+            }
+        }
+    }"
+    @click.window="contextMenu.close()"
+    @keydown.escape.window="contextMenu.close()"
+    @scroll.window="contextMenu.close()"
+    @resize.window="contextMenu.close()"
+    class="space-y-4 w-full min-w-0"
+>
     <!-- Header -->
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <div class="flex items-center gap-2">
-                <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Administration</span>
-                <span class="text-xs text-slate-300">/</span>
-                <span class="text-xs font-semibold uppercase tracking-wider text-slate-700">Security</span>
-            </div>
-            <h1 class="font-heading text-2xl font-bold tracking-tight text-slate-900">User Access Control</h1>
+            
+            <h1 class="font-heading text-2xl font-bold tracking-tight text-slate-900">Users</h1>
         </div>
         <div class="flex items-center gap-2">
             <button 
@@ -397,154 +435,127 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
     </div>
 
-    <!-- Main Workspace with Left Side Filter Panel & Users Table -->
-    <div class="flex flex-col lg:flex-row gap-4 items-start">
-        <!-- Left Filter Panel -->
-        <aside class="w-full lg:w-56 shrink-0 rounded-lg border border-slate-300 bg-white p-3.5 shadow-xs space-y-3.5">
-            <div class="flex items-center justify-between border-b border-slate-200 pb-2">
-                <span class="text-xs font-bold uppercase tracking-wider text-slate-700">User Filters</span>
-                @if ($search !== '' || $roleFilter !== '' || $statusFilter !== 'all')
-                    <button 
-                        wire:click="$set('search', ''); $set('roleFilter', ''); $set('statusFilter', 'all');" 
-                        type="button" 
-                        class="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
-                    >
-                        Reset
-                    </button>
-                @endif
-            </div>
-
-            <!-- Search -->
-            <div>
-                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Search Staff</label>
+    <!-- Table Container with Seamless Top Filters -->
+    <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+        <!-- Horizontal Filter Bar -->
+        <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2.5">
+            <div class="w-56">
                 <input 
                     wire:model.live.debounce.300ms="search" 
                     type="search" 
-                    placeholder="Name or username..." 
+                    placeholder="Search staff name or username..." 
                     class="w-full rounded border border-slate-300 px-2.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
                 />
             </div>
-
-            <!-- Role Filter -->
-            <div>
-                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Role</label>
+            <div class="w-40">
                 <select wire:model.live="roleFilter" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="">All Roles</option>
-                    @if (auth()->user()->role === 'dev')
-                        <option value="dev">Developer (dev)</option>
+                    @if (auth()->user()->role === 'superadmin')
+                        <option value="superadmin">Superadmin</option>
                     @endif
-                    <option value="admin">Admin (Store Owner)</option>
+                    <option value="admin">Store Admin</option>
                     <option value="manager">Manager</option>
                     <option value="mixer">Paint Mixer</option>
                 </select>
             </div>
-
-            <!-- Status Filter -->
-            <div>
-                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Login Status</label>
+            <div class="w-36">
                 <select wire:model.live="statusFilter" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="all">All Statuses</option>
                     <option value="active">Active Only</option>
-                    <option value="inactive">Deactivated Only</option>
+                    <option value="inactive">Inactive Only</option>
                 </select>
             </div>
-        </aside>
+            @if ($search !== '' || $roleFilter !== '' || $statusFilter !== 'all')
+                <button 
+                    wire:click="$set('search', ''); $set('roleFilter', ''); $set('statusFilter', 'all');" 
+                    type="button" 
+                    class="text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium ml-auto"
+                >
+                    Reset
+                </button>
+            @endif
+        </div>
 
-        <!-- Users Grid Table -->
-        <div class="flex-1 min-w-0 w-full overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-            <div class="overflow-x-auto w-full">
-                <table class="w-full border-collapse border border-slate-300 text-xs">
-                    <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
-                        <tr>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-16">ID</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left">Staff Name</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-36">Username</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-32">Role</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-28">Status</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-32">Created Date</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-64">Actions</th>
+        <div class="overflow-x-auto">
+            <table class="w-full border-collapse border border-slate-300 text-xs">
+                <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
+                    <tr>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-12 whitespace-nowrap">ID</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left">Staff Name</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-36 whitespace-nowrap">Username</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-32 whitespace-nowrap">Role</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-24 whitespace-nowrap">Status</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-32 whitespace-nowrap">Created Date</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                    @forelse ($users as $user)
+                        <tr 
+                            class="hover:bg-slate-50 transition-colors cursor-default" 
+                            wire:key="user-row-{{ $user->id }}"
+                            @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $user->id }}, name: '{{ addslashes($user->name) }}', active: {{ $user->active ? 'true' : 'false' }} })"
+                        >
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center tabular-nums text-slate-500 whitespace-nowrap">{{ $user->id }}</td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-900">
+                                <div class="flex items-center gap-1.5">
+                                    <span>{{ $user->name }}</span>
+                                    @if ($user->id === auth()->id())
+                                        <span class="inline-block rounded bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                                            You
+                                        </span>
+                                    @endif
+                                </div>
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-700 whitespace-nowrap font-mono">
+                                {{ $user->username }}
+                            </td>
+                            <!-- Role Badge -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap text-slate-700">
+                                @if ($user->role === 'superadmin')
+                                    Superadmin
+                                @elseif ($user->role === 'admin')
+                                    Store Admin
+                                @elseif ($user->role === 'manager')
+                                    Manager
+                                @elseif ($user->role === 'mixer')
+                                    Paint Mixer
+                                @else
+                                    {{ ucfirst($user->role) }}
+                                @endif
+                            </td>
+                            <!-- Status -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                                @if ($user->active)
+                                    <span class="inline-flex items-center text-[10px] font-bold uppercase text-emerald-700">
+                                        Active
+                                    </span>
+                                @else
+                                    <span class="inline-flex items-center text-[10px] font-bold uppercase text-slate-500">
+                                        Inactive
+                                    </span>
+                                @endif
+                            </td>
+                            <!-- Created Date -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center tabular-nums text-slate-600 whitespace-nowrap">
+                                {{ $user->created_at->format('M d, Y') }}
+                            </td>
+                            <!-- Context Menu Actions -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">
+                                <button 
+                                    @click.stop="contextMenu.openFromButton($event, { id: {{ $user->id }}, name: '{{ addslashes($user->name) }}', active: {{ $user->active ? 'true' : 'false' }} })" 
+                                    type="button" 
+                                    title="More actions"
+                                    class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
+                                >
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none" />
+                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                                        <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none" />
+                                    </svg>
+                                </button>
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200">
-                        @forelse ($users as $user)
-                            <tr class="hover:bg-slate-50 transition-colors" wire:key="user-row-{{ $user->id }}">
-                                <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-500">#{{ $user->id }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-900">
-                                    <div class="flex items-center gap-1.5">
-                                        <span>{{ $user->name }}</span>
-                                        @if ($user->id === auth()->id())
-                                            <span class="inline-block rounded border border-blue-600 text-blue-700 bg-transparent px-1 py-0.2 text-[9px] font-bold uppercase tracking-wider">
-                                                You
-                                            </span>
-                                        @endif
-                                    </div>
-                                </td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-700">
-                                    {{ $user->username }}
-                                </td>
-                                <!-- Role Badge -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
-                                    @if ($user->role === 'dev')
-                                        <span class="inline-block rounded border border-purple-600 text-purple-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Developer
-                                        </span>
-                                    @elseif ($user->role === 'admin')
-                                        <span class="inline-block rounded border border-blue-600 text-blue-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Admin
-                                        </span>
-                                    @elseif ($user->role === 'manager')
-                                        <span class="inline-block rounded border border-emerald-600 text-emerald-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Manager
-                                        </span>
-                                    @elseif ($user->role === 'mixer')
-                                        <span class="inline-block rounded border border-amber-600 text-amber-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Paint Mixer
-                                        </span>
-                                    @endif
-                                </td>
-                                <!-- Status -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
-                                    @if ($user->active)
-                                        <span class="inline-block rounded border border-emerald-600 text-emerald-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Active
-                                        </span>
-                                    @else
-                                        <span class="inline-block rounded border border-rose-600 text-rose-700 bg-transparent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                                            Deactivated
-                                        </span>
-                                    @endif
-                                </td>
-                                <!-- Created Date -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-600 whitespace-nowrap">
-                                    {{ $user->created_at->format('M d, Y') }}
-                                </td>
-                                <!-- Real Action Buttons -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right whitespace-nowrap space-x-1">
-                                    <button 
-                                        wire:click="openEditModal({{ $user->id }})" 
-                                        type="button" 
-                                        class="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-xs transition"
-                                    >
-                                        Edit
-                                    </button>
-                                    <button 
-                                        wire:click="openResetPasswordModal({{ $user->id }})" 
-                                        type="button" 
-                                        class="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-50 shadow-xs transition"
-                                    >
-                                        Reset Password
-                                    </button>
-                                    @if ($user->id !== auth()->id())
-                                        <button 
-                                            wire:click="confirmToggleActive({{ $user->id }})" 
-                                            type="button" 
-                                            class="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium {{ $user->active ? 'text-rose-700 hover:bg-rose-50' : 'text-emerald-700 hover:bg-emerald-50' }} shadow-xs transition"
-                                        >
-                                            {{ $user->active ? 'Deactivate' : 'Reactivate' }}
-                                        </button>
-                                    @endif
-                                </td>
-                            </tr>
                         @empty
                             <tr>
                                 <td colspan="7" class="border border-slate-200 px-6 py-12 text-center text-slate-500">
@@ -566,7 +577,6 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
             @endif
         </div>
-    </div>
 
     <!-- Create User Modal -->
     @if ($showCreateModal)
@@ -604,12 +614,12 @@ new #[Layout('layouts.app')] class extends Component {
                                 <div>
                                     <label for="create_role" class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">Assigned Role</label>
                                     <select wire:model="createRole" id="create_role" class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-slate-500" required>
-                                        @if (auth()->user()->role === 'dev')
-                                            <option value="dev">Developer (Full Access)</option>
+                                        @if (auth()->user()->role === 'superadmin')
+                                            <option value="superadmin">Superadmin</option>
                                         @endif
-                                        <option value="admin">Store Admin (Owner)</option>
-                                        <option value="manager">Manager (Sales & Inventory)</option>
-                                        <option value="mixer">Paint Mixer (POS & Mixing)</option>
+                                        <option value="admin">Store Admin</option>
+                                        <option value="manager">Manager</option>
+                                        <option value="mixer">Paint Mixer</option>
                                     </select>
                                     <x-input-error :messages="$errors->get('createRole')" class="mt-1" />
                                 </div>
@@ -687,12 +697,12 @@ new #[Layout('layouts.app')] class extends Component {
                         <div>
                             <label for="edit_role" class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">Assigned Role</label>
                             <select wire:model="editRole" id="edit_role" class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-slate-500" required>
-                                @if (auth()->user()->role === 'dev')
-                                    <option value="dev">Developer (Full Access)</option>
+                                @if (auth()->user()->role === 'superadmin')
+                                    <option value="superadmin">Superadmin</option>
                                 @endif
-                                <option value="admin">Store Admin (Owner)</option>
-                                <option value="manager">Manager (Sales & Inventory)</option>
-                                <option value="mixer">Paint Mixer (POS & Mixing)</option>
+                                <option value="admin">Store Admin</option>
+                                <option value="manager">Manager</option>
+                                <option value="mixer">Paint Mixer</option>
                             </select>
                             <x-input-error :messages="$errors->get('editRole')" class="mt-1" />
                         </div>
@@ -798,4 +808,47 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </div>
     @endif
+
+    <!-- Global Floating Context Menu (Unconstrained by table) -->
+    <div 
+        x-ref="floatingMenu"
+        x-show="contextMenu.open" 
+        x-cloak
+        x-transition:enter="transition ease-out duration-100"
+        x-transition:enter-start="opacity-0 scale-95"
+        x-transition:enter-end="opacity-100 scale-100"
+        x-transition:leave="transition ease-in duration-75"
+        x-transition:leave-start="opacity-100 scale-100"
+        x-transition:leave-end="opacity-0 scale-95"
+        :style="`position: fixed; left: ${contextMenu.x}px; top: ${contextMenu.y}px; z-index: 9999;`"
+        class="w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"
+        style="display: none;"
+    >
+        <button 
+            @click="if (contextMenu.item) { $wire.openEditModal(contextMenu.item.id); contextMenu.close(); }" 
+            type="button" 
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+        >
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            <span>Edit</span>
+        </button>
+        <button 
+            @click="if (contextMenu.item) { $wire.openResetPasswordModal(contextMenu.item.id); contextMenu.close(); }" 
+            type="button" 
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+        >
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+            <span>Reset Password</span>
+        </button>
+        <div class="my-1 border-t border-slate-100"></div>
+        <button 
+            @click="if (contextMenu.item) { $wire.confirmToggleActive(contextMenu.item.id); contextMenu.close(); }" 
+            type="button" 
+            :class="contextMenu.item?.active ? 'text-rose-700 hover:bg-rose-50' : 'text-emerald-700 hover:bg-emerald-50'"
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium transition-colors"
+        >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+            <span x-text="contextMenu.item?.active ? 'Deactivate' : 'Reactivate'"></span>
+        </button>
+    </div>
 </div>

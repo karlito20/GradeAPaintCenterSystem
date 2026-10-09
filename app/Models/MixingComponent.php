@@ -11,7 +11,7 @@ class MixingComponent extends Model
 
     protected function casts(): array
     {
-        return ['estimated_quantity' => 'decimal:3'];
+        return ['estimated_quantity' => 'decimal:2'];
     }
 
     public function mixingTransaction(): BelongsTo

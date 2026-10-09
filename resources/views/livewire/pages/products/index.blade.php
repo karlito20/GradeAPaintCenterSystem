@@ -4,10 +4,8 @@ use App\Models\AuditLog;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Inventory;
-use App\Models\InventoryMovement;
 use App\Models\PackageUnit;
 use App\Models\Product;
-use App\Models\SaleItem;
 use App\Support\Currency;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -24,7 +22,6 @@ new #[Layout('layouts.app')] class extends Component {
     public string $packageUnitFilterId = '';
     public string $statusFilter = 'active'; // 'all', 'active', 'deactivated'
     public string $stockFilter = ''; // '', 'low', 'out', 'healthy'
-    public bool $sidebarOpen = true;
 
     // Form modal state
     public bool $showForm = false;
@@ -74,17 +71,6 @@ new #[Layout('layouts.app')] class extends Component {
     public function updatedStockFilter(): void
     {
         $this->resetPage();
-    }
-
-    public function selectBrand(string $id): void
-    {
-        $this->brandId = $id;
-        $this->resetPage();
-    }
-
-    public function toggleSidebar(): void
-    {
-        $this->sidebarOpen = !$this->sidebarOpen;
     }
 
     public function resetFilters(): void
@@ -319,35 +305,67 @@ new #[Layout('layouts.app')] class extends Component {
             });
         }
 
-        $allActiveCount = Product::where('active', true)->count();
-        $brandList = Brand::where('active', true)->withCount('products')->orderBy('name')->get();
-
         return view('livewire.pages.products.index', [
             'products' => $query->orderBy('name')->paginate(20),
-            'brands' => $brandList,
+            'brands' => Brand::where('active', true)->orderBy('name')->get(),
             'categories' => Category::where('active', true)->orderBy('name')->get(),
             'packageUnits' => PackageUnit::where('active', true)->orderBy('name')->get(),
             'currency' => Currency::class,
             'productToToggleModel' => $this->productToToggle ? Product::find($this->productToToggle) : null,
-            'allActiveCount' => $allActiveCount,
         ]);
     }
 }; ?>
 
-<div class="space-y-4 w-full min-w-0">
+<div 
+    x-data="{
+        contextMenu: {
+            open: false,
+            x: 0,
+            y: 0,
+            item: null,
+            openAt(x, y, item) {
+                this.item = item;
+                this.x = x;
+                this.y = y;
+                this.open = true;
+                this.$nextTick(() => {
+                    const el = this.$refs.floatingMenu;
+                    if (!el) return;
+                    const r = el.getBoundingClientRect();
+                    if (this.x + r.width > window.innerWidth - 8) {
+                        this.x = Math.max(8, window.innerWidth - r.width - 8);
+                    }
+                    if (this.y + r.height > window.innerHeight - 8) {
+                        this.y = Math.max(8, window.innerHeight - r.height - 8);
+                    }
+                });
+            },
+            openFromButton(event, item) {
+                const btn = event.currentTarget.getBoundingClientRect();
+                this.openAt(btn.right - 176, btn.bottom + 4, item);
+            },
+            openFromEvent(event, item) {
+                this.openAt(event.clientX, event.clientY, item);
+            },
+            close() {
+                this.open = false;
+                this.item = null;
+            }
+        }
+    }"
+    @click.window="contextMenu.close()"
+    @keydown.escape.window="contextMenu.close()"
+    @scroll.window="contextMenu.close()"
+    @resize.window="contextMenu.close()"
+    class="space-y-4 w-full min-w-0"
+>
     <!-- Header -->
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-300 pb-3">
         <div>
             <h1 class="font-heading text-xl font-bold tracking-tight text-slate-900">Products</h1>
         </div>
         <div class="flex items-center gap-2">
-            <button wire:click="toggleSidebar" type="button" class="inline-flex items-center px-2.5 py-1.5 rounded border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-sm transition">
-                <svg class="mr-1 h-3.5 w-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
-                {{ $sidebarOpen ? 'Hide Filters' : 'Show Filters' }}
-            </button>
-            <button wire:click="openCreateModal" type="button" class="inline-flex items-center px-3 py-1.5 rounded bg-[#00a3cc] text-white text-xs font-semibold hover:bg-[#008fb3] shadow-sm transition">
+            <button wire:click="openCreateModal" type="button" class="inline-flex items-center px-3 py-1.5 rounded bg-[#00a3cc] text-white text-xs font-semibold hover:bg-[#008fb3] shadow-xs transition">
                 <svg class="mr-1 h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                 </svg>
@@ -356,205 +374,189 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
     </div>
 
-    <!-- Brand Filter Bar -->
-    <div class="border border-slate-300 bg-white p-2.5 rounded shadow-sm">
-        <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 shrink-0">Brand:</span>
-            <button wire:click="selectBrand('')" type="button"
-                    class="px-2.5 py-1 rounded text-xs font-semibold transition border {{ $brandId === '' ? 'border-[#00a3cc] bg-[#00a3cc] text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50' }}">
-                All Brands ({{ $allActiveCount }})
+    <!-- Table Container with Seamless Top Filters -->
+    <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+        <!-- Horizontal Filter Bar -->
+        <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2.5">
+            <div class="w-56">
+                <input wire:model.live.debounce.300ms="search" type="search" placeholder="Search SKU, name, code..."
+                       class="w-full rounded border border-slate-300 px-2.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+            </div>
+
+            <div class="w-40">
+                <select wire:model.live="brandId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="">All Brands</option>
+                    @foreach ($brands as $b)
+                        <option value="{{ $b->id }}">{{ $b->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="w-40">
+                <select wire:model.live="categoryId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="">All Categories</option>
+                    @foreach ($categories as $cat)
+                        <option value="{{ $cat->id }}">{{ $cat->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="w-36">
+                <select wire:model.live="packageUnitFilterId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="">All Units</option>
+                    @foreach ($packageUnits as $unit)
+                        <option value="{{ $unit->id }}">{{ $unit->name }} ({{ $unit->abbreviation }})</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="w-32">
+                <select wire:model.live="statusFilter" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="active">Active Only</option>
+                    <option value="deactivated">Deactivated</option>
+                    <option value="all">All Status</option>
+                </select>
+            </div>
+
+            <div class="w-36">
+                <select wire:model.live="stockFilter" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="">Any Stock Level</option>
+                    <option value="healthy">Healthy Stock</option>
+                    <option value="low">Low Stock (&le; threshold)</option>
+                    <option value="out">Out of Stock (0 stock)</option>
+                </select>
+            </div>
+
+            <button wire:click="resetFilters" type="button" class="text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium ml-auto">
+                Reset
             </button>
-            @foreach ($brands as $b)
-                <button wire:click="selectBrand('{{ $b->id }}')" type="button"
-                        class="px-2.5 py-1 rounded text-xs font-semibold transition border {{ $brandId == (string)$b->id ? 'border-[#00a3cc] bg-[#00a3cc] text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50' }}">
-                    {{ $b->name }} <span class="font-normal text-[11px] opacity-75">({{ $b->products_count }})</span>
-                </button>
-            @endforeach
         </div>
-    </div>
 
-    <!-- Main Workspace with Dedicated Filter Sidebar & Grid Table -->
-    <div class="flex gap-4 items-start">
-        <!-- Dedicated Filter Sidebar (Collapsible) -->
-        @if ($sidebarOpen)
-            <div class="w-64 shrink-0 border border-slate-300 bg-white p-3 rounded shadow-sm space-y-3">
-                <div class="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                    <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Filter Products</span>
-                    <button wire:click="resetFilters" type="button" class="text-[11px] text-slate-500 hover:text-slate-800 underline">
-                        Reset All
-                    </button>
-                </div>
+        <!-- Dashboard-styled Grid Table -->
+        <div class="overflow-x-auto">
+            <table class="w-full border-collapse border border-slate-300 text-xs">
+                <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
+                    <tr>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28">SKU</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[200px]">Product Name</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-16">Unit</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Brand</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Category</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Selling Price</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Current Stock</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-20">Threshold</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-24">Status</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-16">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                    @forelse ($products as $product)
+                        @php
+                            $qty = (float) ($product->inventory?->quantity ?? 0);
+                            $threshold = (float) $product->low_stock_threshold;
+                            $isOut = $qty <= 0;
+                            $isLow = $qty <= $threshold;
+                        @endphp
+                        <tr 
+                            @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $product->id }}, name: '{{ addslashes($product->name) }}', active: {{ $product->active ? 'true' : 'false' }} })"
+                            class="hover:bg-slate-50 transition-colors cursor-default" 
+                            wire:key="product-{{ $product->id }}"
+                        >
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap font-mono">
+                                {{ $product->sku }}
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 font-medium text-slate-900 min-w-[200px] max-w-md break-words whitespace-normal" title="{{ $product->name }}">
+                                {{ $product->name }}
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-700 whitespace-nowrap">
+                                {{ $product->packageUnit?->abbreviation ?? $product->packageUnit?->name ?? '—' }}
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
+                                {{ $product->brand?->name ?? '—' }}
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
+                                {{ $product->category?->name ?? '—' }}
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-right text-slate-900 font-semibold tabular-nums whitespace-nowrap">
+                                {{ $currency::format($product->selling_price) }}
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums whitespace-nowrap font-bold {{ $isOut ? 'text-rose-700' : ($isLow ? 'text-amber-700' : 'text-slate-900') }}">
+                                {{ number_format($qty, 2) }}
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-right text-slate-500 tabular-nums whitespace-nowrap">
+                                {{ number_format($threshold, 2) }}
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                                @if ($product->active)
+                                    <span class="text-[10px] font-bold uppercase text-emerald-700">Active</span>
+                                @else
+                                    <span class="text-[10px] font-bold uppercase text-slate-500">Deactivated</span>
+                                @endif
+                            </td>
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                                <button 
+                                    @click.stop="contextMenu.openFromButton($event, { id: {{ $product->id }}, name: '{{ addslashes($product->name) }}', active: {{ $product->active ? 'true' : 'false' }} })"
+                                    type="button" 
+                                    class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
+                                    title="Options"
+                                >
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+                                    </svg>
+                                </button>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="10" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
+                                No products found matching current criteria.
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
 
-                <!-- Search -->
-                <div>
-                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Search Name / SKU</label>
-                    <input wire:model.live.debounce.300ms="search" type="text" placeholder="Type keyword..."
-                           class="w-full rounded border-slate-300 text-xs py-1 px-2 focus:border-[#008fb3] focus:ring-[#008fb3]" />
-                </div>
-
-                <!-- Category -->
-                <div>
-                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Category</label>
-                    <select wire:model.live="categoryId" class="w-full rounded border-slate-300 text-xs py-1 px-2 focus:border-[#008fb3] focus:ring-[#008fb3]">
-                        <option value="">All Categories</option>
-                        @foreach ($categories as $cat)
-                            <option value="{{ $cat->id }}">{{ $cat->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <!-- Package Unit -->
-                <div>
-                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Package Unit</label>
-                    <select wire:model.live="packageUnitFilterId" class="w-full rounded border-slate-300 text-xs py-1 px-2 focus:border-[#008fb3] focus:ring-[#008fb3]">
-                        <option value="">All Units</option>
-                        @foreach ($packageUnits as $unit)
-                            <option value="{{ $unit->id }}">{{ $unit->name }} ({{ $unit->abbreviation }})</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <!-- Status Filter -->
-                <div>
-                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Status</label>
-                    <select wire:model.live="statusFilter" class="w-full rounded border-slate-300 text-xs py-1 px-2 focus:border-[#008fb3] focus:ring-[#008fb3]">
-                        <option value="active">Active Only</option>
-                        <option value="deactivated">Deactivated Only</option>
-                        <option value="all">All Products</option>
-                    </select>
-                </div>
-
-                <!-- Stock Level -->
-                <div>
-                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Stock Level</label>
-                    <select wire:model.live="stockFilter" class="w-full rounded border-slate-300 text-xs py-1 px-2 focus:border-[#008fb3] focus:ring-[#008fb3]">
-                        <option value="">Any Stock Level</option>
-                        <option value="healthy">Healthy Stock</option>
-                        <option value="low">Low Stock (&le; threshold)</option>
-                        <option value="out">Out of Stock (0 stock)</option>
-                    </select>
-                </div>
+        @if ($products->hasPages())
+            <div class="border-t border-slate-300 px-3 py-2 bg-slate-50">
+                {{ $products->links() }}
             </div>
         @endif
+    </div>
 
-        <!-- Grid-Based Products Table -->
-        <div class="flex-1 min-w-0 space-y-2">
-            <!-- Search bar if sidebar is closed -->
-            @if (!$sidebarOpen)
-                <div class="flex items-center gap-2">
-                    <input wire:model.live.debounce.300ms="search" type="text" placeholder="Search product name, SKU, or manufacturer code..."
-                           class="w-full max-w-md rounded border-slate-300 text-xs py-1.5 px-3 focus:border-[#008fb3] focus:ring-[#008fb3]" />
-                </div>
-            @endif
-
-            <!-- Table with explicit visible vertical and horizontal grid lines -->
-            <div class="overflow-x-auto border border-slate-300 bg-white shadow-sm">
-                <table class="min-w-full border-collapse border border-slate-300 text-xs">
-                    <thead class="bg-slate-100 font-semibold uppercase tracking-wider text-slate-700">
-                        <tr>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Brand</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-left">Product Name</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28">SKU</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Category</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-20">Unit</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Selling Price</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Current Stock</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-right w-20">Threshold</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-24">Status</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-36">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200">
-                        @forelse ($products as $product)
-                            @php
-                                $qty = (float) ($product->inventory?->quantity ?? 0);
-                                $threshold = (float) $product->low_stock_threshold;
-                                $isOut = $qty <= 0;
-                                $isLow = $qty <= $threshold;
-                            @endphp
-                            <tr class="hover:bg-slate-50 transition-colors">
-                                <!-- Brand -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
-                                    {{ $product->brand?->name ?? '—' }}
-                                </td>
-
-                                <!-- Product Name -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-900 font-medium min-w-[220px] max-w-md break-words whitespace-normal" title="{{ $product->name }}">
-                                    {{ $product->name }}
-                                </td>
-
-                                <!-- SKU -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap tabular-nums">
-                                    {{ $product->sku }}
-                                </td>
-
-                                <!-- Category -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
-                                    {{ $product->category?->name ?? '—' }}
-                                </td>
-
-                                <!-- Package Unit -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-700 whitespace-nowrap">
-                                    {{ $product->packageUnit?->abbreviation ?? $product->packageUnit?->name ?? '—' }}
-                                </td>
-
-                                <!-- Selling Price -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right text-slate-900 font-semibold tabular-nums whitespace-nowrap">
-                                    {{ $currency::format($product->selling_price) }}
-                                </td>
-
-                                <!-- Current Stock -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums whitespace-nowrap font-bold {{ $isOut ? 'text-rose-700' : ($isLow ? 'text-amber-700' : 'text-slate-900') }}">
-                                    {{ number_format($qty, 3) }}
-                                </td>
-
-                                <!-- Threshold -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right text-slate-500 tabular-nums whitespace-nowrap">
-                                    {{ number_format($threshold, 3) }}
-                                </td>
-
-                                <!-- Status: colored border + colored text + transparent background, minimal rounding -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
-                                    @if ($product->active)
-                                        <span class="inline-flex px-1.5 py-0.5 rounded border border-emerald-600 text-emerald-700 bg-transparent text-[10px] font-bold">
-                                            Active
-                                        </span>
-                                    @else
-                                        <span class="inline-flex px-1.5 py-0.5 rounded border border-slate-400 text-slate-600 bg-transparent text-[10px] font-bold">
-                                            Deactivated
-                                        </span>
-                                    @endif
-                                </td>
-
-                                <!-- Actions: Real buttons -->
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap space-x-1">
-                                    <button wire:click="editProduct({{ $product->id }})" type="button"
-                                            class="inline-flex items-center px-2 py-0.5 rounded border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-sm transition">
-                                        Edit
-                                    </button>
-                                    <button wire:click="confirmToggleStatus({{ $product->id }})" type="button"
-                                            class="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium shadow-sm transition {{ $product->active ? 'border-rose-300 bg-white text-rose-700 hover:bg-rose-50' : 'border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50' }}">
-                                        {{ $product->active ? 'Deactivate' : 'Reactivate' }}
-                                    </button>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="10" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
-                                    No products found matching current criteria.
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-
-            @if ($products->hasPages())
-                <div class="border border-slate-300 bg-white p-2.5 rounded shadow-sm">
-                    {{ $products->links() }}
-                </div>
-            @endif
-        </div>
+    <!-- Global Floating Context Menu -->
+    <div 
+        x-ref="floatingMenu"
+        x-show="contextMenu.open" 
+        x-cloak
+        x-transition:enter="transition ease-out duration-100"
+        x-transition:enter-start="opacity-0 scale-95"
+        x-transition:enter-end="opacity-100 scale-100"
+        x-transition:leave="transition ease-in duration-75"
+        x-transition:leave-start="opacity-100 scale-100"
+        x-transition:leave-end="opacity-0 scale-95"
+        :style="`position: fixed; left: ${contextMenu.x}px; top: ${contextMenu.y}px; z-index: 9999;`"
+        class="w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"
+        style="display: none;"
+    >
+        <button 
+            @click="if (contextMenu.item) { $wire.editProduct(contextMenu.item.id); contextMenu.close(); }" 
+            type="button" 
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+        >
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            <span>Edit Product</span>
+        </button>
+        <div class="my-1 border-t border-slate-100"></div>
+        <button 
+            @click="if (contextMenu.item) { $wire.confirmToggleStatus(contextMenu.item.id); contextMenu.close(); }" 
+            type="button" 
+            :class="contextMenu.item?.active ? 'text-rose-700 hover:bg-rose-50' : 'text-emerald-700 hover:bg-emerald-50'"
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium transition-colors"
+        >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+            <span x-text="contextMenu.item?.active ? 'Deactivate' : 'Reactivate'"></span>
+        </button>
     </div>
 
     <!-- Product Create/Edit Modal with Structured Labels -->
@@ -649,7 +651,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                             <div>
                                 <label for="packageSize" class="block font-semibold text-slate-700 mb-1">Package Size</label>
-                                <input wire:model="packageSize" id="packageSize" type="number" step="0.001" placeholder="e.g. 4.0"
+                                <input wire:model="packageSize" id="packageSize" type="number" step="0.01" placeholder="e.g. 4.0"
                                        class="w-full rounded border-slate-300 text-xs py-2 px-2.5 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
                             </div>
                         </div>
@@ -672,7 +674,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                             <div>
                                 <label for="lowStockThreshold" class="block font-semibold text-slate-700 mb-1">Low Stock Threshold</label>
-                                <input wire:model="lowStockThreshold" id="lowStockThreshold" type="number" step="0.001" min="0"
+                                <input wire:model="lowStockThreshold" id="lowStockThreshold" type="number" step="0.01" min="0"
                                        class="w-full rounded border-slate-300 text-xs py-2 px-2.5 tabular-nums focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
                             </div>
                         </div>

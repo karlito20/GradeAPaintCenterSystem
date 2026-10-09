@@ -35,8 +35,8 @@
         }
     </style>
 </head>
-<body class="font-sans antialiased bg-gray-100 text-gray-900 min-h-screen py-6 px-4 print:p-0 print:bg-white">
-    <div class="mx-auto max-w-2xl">
+<body class="font-sans antialiased bg-slate-100 text-slate-900 min-h-screen py-4 px-2 sm:px-4 print:p-0 print:bg-white">
+    <div class="mx-auto max-w-md">
         {{ $slot }}
     </div>
 </body>

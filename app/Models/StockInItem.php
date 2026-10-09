@@ -11,7 +11,7 @@ class StockInItem extends Model
 
     protected function casts(): array
     {
-        return ['quantity' => 'decimal:3', 'unit_cost' => 'decimal:2'];
+        return ['quantity' => 'decimal:2', 'unit_cost' => 'decimal:2'];
     }
 
     public function stockIn(): BelongsTo

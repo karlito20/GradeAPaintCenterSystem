@@ -49,8 +49,8 @@ test('checkout processes cash sale with discount, decrements stock, and logs mov
     // Perform checkout via pages.sales.checkout Volt component
     Volt::actingAs($user)
         ->test('pages.sales.checkout')
-        ->set('discountPercentage', '10') // 10% discount on 1000 = 100 discount, net 900
-        ->set('tenderedAmount', '1000.00')
+        ->set('discountPercentage', '10') // 10% discount on 1000 = 100 discount, net 900, 12% VAT = 108, total 1008
+        ->set('tenderedAmount', '1100.00')
         ->call('completeSale')
         ->assertHasNoErrors()
         ->assertRedirect();
@@ -60,9 +60,11 @@ test('checkout processes cash sale with discount, decrements stock, and logs mov
         ->and((float) $sale->subtotal)->toBe(1000.00)
         ->and((float) $sale->discount_percentage)->toBe(10.00)
         ->and((float) $sale->discount_amount)->toBe(100.00)
-        ->and((float) $sale->total)->toBe(900.00)
-        ->and((float) $sale->payment_amount)->toBe(1000.00)
-        ->and((float) $sale->change_amount)->toBe(100.00);
+        ->and((float) $sale->tax_rate)->toBe(12.00)
+        ->and((float) $sale->tax_amount)->toBe(108.00)
+        ->and((float) $sale->total)->toBe(1008.00)
+        ->and((float) $sale->payment_amount)->toBe(1100.00)
+        ->and((float) $sale->change_amount)->toBe(92.00);
 
     // Verify inventory decremented
     expect((float) $product->fresh()->inventory->quantity)->toBe(8.0);
@@ -75,9 +77,12 @@ test('checkout processes cash sale with discount, decrements stock, and logs mov
         ->and((float) $movement->quantity_after)->toBe(8.000);
 
     // Verify audit log
-    $audit = AuditLog::where('auditable_type', Sale::class)->where('auditable_id', $sale->id)->first();
-    expect($audit)->not->toBeNull()
-        ->and($audit->event)->toBe('sale_completed');
+    $saleAudit = AuditLog::where('auditable_type', Sale::class)->where('auditable_id', $sale->id)->where('event', 'sale_completed')->first();
+    expect($saleAudit)->not->toBeNull();
+
+    $discountAudit = AuditLog::where('auditable_type', Sale::class)->where('auditable_id', $sale->id)->where('event', 'sale_discount_applied')->first();
+    expect($discountAudit)->not->toBeNull()
+        ->and((float) $discountAudit->context['discount_amount'])->toBe(100.00);
 });
 
 test('dedicated printable receipt renders cleanly without navigation chrome', function () {

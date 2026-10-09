@@ -22,8 +22,23 @@ new #[Layout('layouts.app')] class extends Component {
         if ($this->estimatedQuantityUnit === '' && $this->productId !== '') {
             $this->estimatedQuantityUnit = Product::with('packageUnit')->find($this->productId)?->packageUnit?->abbreviation ?: 'package-equivalent';
         }
-        $validated = $this->validate(['productId' => ['required', 'integer', Rule::exists('products', 'id')], 'estimatedQuantity' => ['required', 'numeric', 'gt:0'], 'estimatedQuantityUnit' => ['required', 'string', 'max:30']]);
-        $this->components[] = ['product_id' => (int) $validated['productId'], 'estimated_quantity' => (float) $validated['estimatedQuantity'], 'estimated_quantity_unit' => $validated['estimatedQuantityUnit']];
+        $validated = $this->validate([
+            'productId' => ['required', 'integer', Rule::exists('products', 'id')],
+            'estimatedQuantity' => ['required', 'numeric', 'gt:0'],
+            'estimatedQuantityUnit' => ['required', 'string', 'max:30'],
+        ]);
+
+        $product = Product::with(['packageUnit', 'category'])->find($this->productId);
+        if (\App\Models\Category::where('is_for_mixing', true)->exists() && ! $product?->category?->is_for_mixing) {
+            $this->addError('productId', 'Only paints in designated mixing categories can be selected.');
+            return;
+        }
+
+        $this->components[] = [
+            'product_id' => (int) $validated['productId'],
+            'estimated_quantity' => (float) $validated['estimatedQuantity'],
+            'estimated_quantity_unit' => $validated['estimatedQuantityUnit'],
+        ];
         $this->reset(['productId', 'estimatedQuantity', 'estimatedQuantityUnit']);
     }
 
@@ -40,9 +55,9 @@ new #[Layout('layouts.app')] class extends Component {
             ->whereIn('id', collect($this->components)->pluck('product_id'))
             ->get()
             ->keyBy('id');
-        $basis = $products->sortByDesc(fn(Product $product): float => (float) $product->selling_price)->first();
+        $basis = $products->sortByDesc(fn (Product $product): float => (float) $product->selling_price)->first();
         DB::transaction(function () use ($products, $basis): void {
-            $sale = Sale::create(['user_id' => auth()->id(), 'invoice_number' => 'MIX-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(4)), 'sold_at' => now(), 'type' => 'custom_mix', 'subtotal' => $basis->selling_price, 'total' => $basis->selling_price]);
+            $sale = Sale::create(['user_id' => auth()->id(), 'invoice_number' => 'MIX-'.now()->format('YmdHis').'-'.Str::upper(Str::random(4)), 'sold_at' => now(), 'type' => 'custom_mix', 'subtotal' => $basis->selling_price, 'total' => $basis->selling_price]);
             $sale->items()->create(['description' => 'Custom paint mix', 'quantity' => 1, 'unit_price' => $basis->selling_price, 'subtotal' => $basis->selling_price]);
             $mix = MixingTransaction::create(['sale_id' => $sale->id, 'price_basis_product_id' => $basis->id, 'notes' => $this->notes ?: null]);
             foreach ($this->components as $component) {
@@ -56,7 +71,15 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function render(): mixed
     {
-        return view('livewire.pages.mixing.index', ['products' => Product::query()->where('active', true)->orderBy('name')->get()]);
+        $mixingCategoriesExist = \App\Models\Category::where('is_for_mixing', true)->exists();
+        $productsQuery = Product::query()->where('active', true);
+        if ($mixingCategoriesExist) {
+            $productsQuery->whereHas('category', fn ($q) => $q->where('is_for_mixing', true));
+        }
+
+        return view('livewire.pages.mixing.index', [
+            'products' => $productsQuery->orderBy('name')->get(),
+        ]);
     }
 }; ?>
 
@@ -91,7 +114,7 @@ new #[Layout('layouts.app')] class extends Component {
 
             <div>
                 <label for="estimatedQuantity" class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">Estimated Qty</label>
-                <input wire:model="estimatedQuantity" id="estimatedQuantity" type="number" step="0.001" placeholder="e.g. 0.5" class="w-full rounded border-slate-300 text-xs font-mono tabular-nums focus:border-slate-500 focus:ring-slate-500" />
+                <input wire:model="estimatedQuantity" id="estimatedQuantity" type="number" step="0.01" placeholder="e.g. 0.50" class="w-full rounded border-slate-300 text-xs font-mono tabular-nums focus:border-slate-500 focus:ring-slate-500" />
                 <x-input-error :messages="$errors->get('estimatedQuantity')" class="mt-1" />
             </div>
 
@@ -134,7 +157,7 @@ new #[Layout('layouts.app')] class extends Component {
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600">
                                     {{ $products->firstWhere('id', $component['product_id'])?->packageUnit?->abbreviation ?? '-' }}
                                 </td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right font-mono tabular-nums font-bold text-slate-900">{{ $component['estimated_quantity'] }}</td>
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-right font-mono tabular-nums font-bold text-slate-900">{{ number_format((float) $component['estimated_quantity'], 2) }}</td>
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-700">{{ $component['estimated_quantity_unit'] }}</td>
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-right">
                                     <button wire:click="removeComponent({{ $index }})" type="button" class="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-rose-700 hover:bg-rose-50 shadow-xs transition">Remove</button>

@@ -11,7 +11,7 @@ class PhysicalInventoryItem extends Model
 
     protected function casts(): array
     {
-        return ['system_quantity' => 'decimal:3', 'physical_quantity' => 'decimal:3', 'variance' => 'decimal:3'];
+        return ['system_quantity' => 'decimal:2', 'physical_quantity' => 'decimal:2', 'variance' => 'decimal:2'];
     }
 
     public function physicalInventory(): BelongsTo

@@ -13,10 +13,59 @@ new #[Layout('layouts.app')] class extends Component {
     public ?string $restoringFile = null;
     public ?string $deletingFile = null;
     public bool $isProcessing = false;
+    public string $backupFrequency = 'daily';
 
     public function mount(): void
     {
         abort_unless(auth()->user()?->canAccessAdministration(), 403);
+        $this->backupFrequency = app(\App\Services\AutoBackupService::class)->getFrequency();
+    }
+
+    public function updateFrequency(): void
+    {
+        abort_unless(auth()->user()?->canAccessAdministration(), 403);
+        app(\App\Services\AutoBackupService::class)->setFrequency($this->backupFrequency);
+        $this->dispatch('toast', [
+            'type' => 'success',
+            'message' => 'Auto-backup frequency updated successfully.',
+        ]);
+    }
+
+    public function runAutoBackupCheck(): void
+    {
+        abort_unless(auth()->user()?->canAccessAdministration(), 403);
+        $service = app(\App\Services\AutoBackupService::class);
+        if (! $service->isOverdue()) {
+            $next = $service->getNextDueTime();
+            $this->dispatch('toast', [
+                'type' => 'info',
+                'message' => 'Backup is currently up to date. Next due: ' . ($next ? $next->format('M d, Y h:i A') : 'N/A'),
+            ]);
+            return;
+        }
+
+        $this->isProcessing = true;
+        try {
+            $ran = $service->checkAndRunIfOverdue('manual_check');
+            if ($ran) {
+                $this->dispatch('toast', [
+                    'type' => 'success',
+                    'message' => 'Overdue automated database backup created successfully.',
+                ]);
+            } else {
+                $this->dispatch('toast', [
+                    'type' => 'info',
+                    'message' => 'Auto-backup check completed.',
+                ]);
+            }
+        } catch (\Throwable $e) {
+            $this->dispatch('toast', [
+                'type' => 'error',
+                'message' => 'Auto-backup failed: ' . $e->getMessage(),
+            ]);
+        } finally {
+            $this->isProcessing = false;
+        }
     }
 
     public function createBackup(): void
@@ -196,15 +245,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->deletingFile = null;
     }
 
-    public function downloadBackup(string $filename): BinaryFileResponse
-    {
-        abort_unless(auth()->user()?->canAccessAdministration(), 403);
-
-        $filePath = $this->getBackupFilePath($filename);
-        abort_unless(file_exists($filePath), 404);
-
-        return response()->download($filePath);
-    }
+    
 
     protected function getBackupDir(): string
     {
@@ -254,31 +295,68 @@ new #[Layout('layouts.app')] class extends Component {
             usort($files, fn($a, $b) => $b['timestamp'] <=> $a['timestamp']);
         }
 
+        $autoBackupService = app(\App\Services\AutoBackupService::class);
+
         return view('livewire.pages.admin.backup', [
             'backups' => $files,
+            'lastBackupTime' => $autoBackupService->getLastBackupTime(),
+            'nextDueTime' => $autoBackupService->getNextDueTime(),
+            'isOverdue' => $autoBackupService->isOverdue(),
+            'frequencies' => \App\Services\AutoBackupService::getFrequencies(),
         ]);
     }
 }; ?>
 
-<div class="space-y-4 w-full min-w-0">
+<div 
+    x-data="{
+        contextMenu: {
+            open: false,
+            x: 0,
+            y: 0,
+            item: null,
+            openAt(x, y, item) {
+                this.item = item;
+                this.x = x;
+                this.y = y;
+                this.open = true;
+                this.$nextTick(() => {
+                    const el = this.$refs.floatingMenu;
+                    if (!el) return;
+                    const r = el.getBoundingClientRect();
+                    if (this.x + r.width > window.innerWidth - 8) {
+                        this.x = Math.max(8, window.innerWidth - r.width - 8);
+                    }
+                    if (this.y + r.height > window.innerHeight - 8) {
+                        this.y = Math.max(8, window.innerHeight - r.height - 8);
+                    }
+                });
+            },
+            openFromButton(event, item) {
+                const btn = event.currentTarget.getBoundingClientRect();
+                this.openAt(btn.right - 160, btn.bottom + 4, item);
+            },
+            openFromEvent(event, item) {
+                this.openAt(event.clientX, event.clientY, item);
+            },
+            close() {
+                this.open = false;
+                this.item = null;
+            }
+        }
+    }"
+    @click.window="contextMenu.close()"
+    @keydown.escape.window="contextMenu.close()"
+    @scroll.window="contextMenu.close()"
+    @resize.window="contextMenu.close()"
+    class="space-y-4 w-full min-w-0"
+>
     <!-- Header -->
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <div class="flex items-center gap-2">
-                <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Administration</span>
-                <span class="text-xs text-slate-300">/</span>
-                <span class="text-xs font-semibold uppercase tracking-wider text-slate-700">Maintenance</span>
-            </div>
-            <h1 class="font-heading text-2xl font-bold tracking-tight text-slate-900">Database Backup &amp; Restore</h1>
+            
+            <h1 class="font-heading text-2xl font-bold tracking-tight text-slate-900">Backups</h1>
         </div>
-        <div class="flex items-center gap-2">
-            <a href="{{ route('audit.index') }}" class="inline-flex items-center rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 transition">
-                Audit Trail
-            </a>
-            <a href="{{ route('user-access.index') }}" class="inline-flex items-center rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 transition">
-                User Access
-            </a>
-        </div>
+        
     </div>
 
     <!-- Main Workspace with Left Side Action Panel & Backups Table -->
@@ -328,6 +406,63 @@ new #[Layout('layouts.app')] class extends Component {
                 @endif
             </div>
 
+            <!-- Auto-Backup Configuration -->
+            <div class="border-t border-slate-200 pt-3 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Auto-Backup</span>
+                    @if ($backupFrequency !== 'disabled')
+                        <span class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold {{ $isOverdue ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800' }}">
+                            <span class="h-1.5 w-1.5 rounded-full {{ $isOverdue ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500' }}"></span>
+                            {{ $isOverdue ? 'Overdue' : 'Active' }}
+                        </span>
+                    @else
+                        <span class="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">Off</span>
+                    @endif
+                </div>
+
+                <div>
+                    <label for="backupFrequencySelect" class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 block mb-1">Frequency</label>
+                    <select 
+                        id="backupFrequencySelect"
+                        wire:model.live="backupFrequency" 
+                        wire:change="updateFrequency"
+                        class="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-800 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]"
+                    >
+                        @foreach ($frequencies as $val => $label)
+                            <option value="{{ $val }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                @if ($backupFrequency !== 'disabled')
+                    <div class="rounded border {{ $isOverdue ? 'border-amber-300 bg-amber-50/70' : 'border-slate-200 bg-slate-50' }} p-2 text-xs space-y-1">
+                        <div class="flex justify-between items-center text-slate-600">
+                            <span class="text-[10px] uppercase font-bold text-slate-500">Next Due</span>
+                            <span class="font-mono text-[11px] {{ $isOverdue ? 'text-amber-900 font-bold' : 'text-slate-800 font-medium' }}">
+                                {{ $nextDueTime ? $nextDueTime->format('M d · h:i A') : 'Immediately' }}
+                            </span>
+                        </div>
+                        @if ($isOverdue)
+                            <div class="pt-1 border-t border-amber-200/80 flex items-center justify-between">
+                                <span class="text-[10px] text-amber-800 font-medium">Backup overdue</span>
+                                <button 
+                                    wire:click="runAutoBackupCheck"
+                                    wire:loading.attr="disabled"
+                                    type="button" 
+                                    class="text-[10px] font-bold text-[#008fb3] hover:underline"
+                                >
+                                    Run Check Now
+                                </button>
+                            </div>
+                        @endif
+                    </div>
+                @endif
+                
+                <p class="text-[10px] text-slate-400 leading-tight">
+                    Automatically creates database backups if overdue during login, scheduled runs, and system startup.
+                </p>
+            </div>
+
             <!-- Safety Notice -->
             <div class="border-t border-slate-200 pt-3 text-[11px] text-amber-800 rounded bg-amber-50/70 p-2.5 border border-amber-200">
                 <div class="flex items-center gap-1 font-bold text-amber-900 mb-1">
@@ -344,11 +479,11 @@ new #[Layout('layouts.app')] class extends Component {
             <table class="w-full border-collapse border border-slate-300 text-xs">
                 <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
                     <tr>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left">Backup Filename</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Date Created</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24">Time</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24">Archive Size</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-right w-56">Actions</th>
+                        <th class="border border-slate-300 px-3 py-1.5 text-left">Backup Filename</th>
+                        <th class="border border-slate-300 px-4 py-1.5 text-center w-px whitespace-nowrap">Date Created</th>
+                        <th class="border border-slate-300 px-4 py-1.5 text-center w-px whitespace-nowrap">Time</th>
+                        <th class="border border-slate-300 px-4 py-1.5 text-right w-px whitespace-nowrap">Archive Size</th>
+                        <th class="border border-slate-300 px-2 py-1.5 text-center w-px whitespace-nowrap">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200">
@@ -356,41 +491,37 @@ new #[Layout('layouts.app')] class extends Component {
                         @php
                             $dt = \Carbon\Carbon::parse($backup['modified_at']);
                         @endphp
-                        <tr class="hover:bg-slate-50 transition-colors">
-                            <td class="border border-slate-200 px-2.5 py-1.5 font-mono text-slate-900 font-medium">
+                        <tr 
+                            class="hover:bg-slate-50 transition-colors"
+                            @contextmenu.prevent="contextMenu.openFromEvent($event, { name: '{{ addslashes($backup['name']) }}' })"
+                        >
+                            <td class="border border-slate-200 px-3 py-1.5 font-mono text-slate-900 font-medium">
                                 <div class="flex items-center gap-1.5">
                                     <svg class="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                                     <span>{{ $backup['name'] }}</span>
                                 </div>
                             </td>
                             <!-- Separate Date Column -->
-                            <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-800 whitespace-nowrap">
+                            <td class="border border-slate-200 px-4 py-1.5 text-center tabular-nums text-slate-800 whitespace-nowrap">
                                 {{ $dt->format('M d, Y') }}
                             </td>
                             <!-- Separate Time Column -->
-                            <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-500 whitespace-nowrap">
+                            <td class="border border-slate-200 px-4 py-1.5 text-center tabular-nums text-slate-500 whitespace-nowrap">
                                 {{ $dt->format('h:i A') }}
                             </td>
                             <!-- Archive Size -->
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-semibold text-slate-800 whitespace-nowrap">
+                            <td class="border border-slate-200 px-4 py-1.5 text-right tabular-nums font-semibold text-slate-800 whitespace-nowrap">
                                 {{ $backup['size'] }}
                             </td>
-                            <!-- Real Action Buttons -->
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-right whitespace-nowrap space-x-1">
-                                <button wire:click="downloadBackup('{{ $backup['name'] }}')" type="button"
-                                    class="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-xs transition">
-                                    <svg class="h-3 w-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                                    <span>Download</span>
-                                </button>
-                                <button wire:click="confirmRestore('{{ $backup['name'] }}')" type="button"
-                                    class="inline-flex items-center gap-1 rounded border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-50 shadow-xs transition">
-                                    <svg class="h-3 w-3 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                                    <span>Restore</span>
-                                </button>
-                                <button wire:click="confirmDelete('{{ $backup['name'] }}')" type="button"
-                                    class="inline-flex items-center gap-1 rounded border border-rose-300 bg-white px-2 py-0.5 text-xs font-medium text-rose-700 hover:bg-rose-50 shadow-xs transition">
-                                    <svg class="h-3 w-3 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                    <span>Delete</span>
+                            <!-- Context Menu Actions -->
+                            <td class="border border-slate-200 px-2 py-1.5 text-center w-px whitespace-nowrap">
+                                <button 
+                                    @click.stop="contextMenu.openFromButton($event, { name: '{{ addslashes($backup['name']) }}' })" 
+                                    type="button" 
+                                    title="More actions"
+                                    class="inline-flex justify-center items-center rounded p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
                                 </button>
                             </td>
                         </tr>
@@ -478,4 +609,38 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </div>
     @endif
+
+    <!-- Global Floating Context Menu (Unconstrained by table) -->
+    <div 
+        x-ref="floatingMenu"
+        x-show="contextMenu.open" 
+        x-cloak
+        x-transition:enter="transition ease-out duration-100"
+        x-transition:enter-start="opacity-0 scale-95"
+        x-transition:enter-end="opacity-100 scale-100"
+        x-transition:leave="transition ease-in duration-75"
+        x-transition:leave-start="opacity-100 scale-100"
+        x-transition:leave-end="opacity-0 scale-95"
+        :style="`position: fixed; left: ${contextMenu.x}px; top: ${contextMenu.y}px; z-index: 9999;`"
+        class="w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"
+        style="display: none;"
+    >
+        <button 
+            @click="if (contextMenu.item) { $wire.confirmRestore(contextMenu.item.name); contextMenu.close(); }" 
+            type="button" 
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+        >
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span>Restore Snapshot</span>
+        </button>
+        <div class="my-1 border-t border-slate-100"></div>
+        <button 
+            @click="if (contextMenu.item) { $wire.confirmDelete(contextMenu.item.name); contextMenu.close(); }" 
+            type="button" 
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-rose-700 hover:bg-rose-50 transition-colors"
+        >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            <span>Delete Snapshot</span>
+        </button>
+    </div>
 </div>

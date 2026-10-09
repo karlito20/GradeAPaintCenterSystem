@@ -70,3 +70,31 @@ test('users can logout', function () {
 
     $this->assertGuest();
 });
+
+test('navigation sidebar retains collapsed and expanded state across page visits', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user);
+
+    // Initial mount: expanded by default
+    $component = Volt::test('layout.navigation');
+    expect($component->get('collapsed'))->toBeFalse();
+
+    // Toggle sidebar to collapsed
+    $component->call('toggleSidebar');
+    expect($component->get('collapsed'))->toBeTrue();
+    expect(session('sidebar_collapsed'))->toBeTrue();
+
+    // Remounting component (simulating page navigation) should retain collapsed state
+    $newComponent = Volt::test('layout.navigation');
+    expect($newComponent->get('collapsed'))->toBeTrue();
+
+    // Toggle back to expanded
+    $newComponent->call('toggleSidebar');
+    expect($newComponent->get('collapsed'))->toBeFalse();
+    expect(session('sidebar_collapsed'))->toBeFalse();
+
+    // Subsequent remount should retain expanded state
+    $finalComponent = Volt::test('layout.navigation');
+    expect($finalComponent->get('collapsed'))->toBeFalse();
+});
