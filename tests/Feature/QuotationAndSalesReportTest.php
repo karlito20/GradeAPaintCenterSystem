@@ -54,9 +54,9 @@ test('a cashier can save the pos cart as a quotation and load it back into the c
         ->and($quote->customer_contact)->toBe('09123456789')
         ->and((float) $quote->subtotal)->toBe(1200.00)
         ->and((float) $quote->discount_amount)->toBe(60.00) // 5% of 1200
-        ->and((float) $quote->tax_rate)->toBe(12.00)
-        ->and((float) $quote->tax_amount)->toBe(136.80) // 12% of (1200 - 60 = 1140)
-        ->and((float) $quote->total)->toBe(1276.80)
+        ->and((float) $quote->tax_rate)->toBe(0.00)
+        ->and((float) $quote->tax_amount)->toBe(0.00)
+        ->and((float) $quote->total)->toBe(1140.00)
         ->and($quote->status)->toBe('draft')
         ->and($quote->items)->toHaveCount(1)
         ->and((float) $quote->items->first()->quantity)->toBe(2.00);
@@ -155,7 +155,7 @@ test('completing a checkout converts the linked quotation and stores 12% VAT and
     Volt::actingAs($user)
         ->test('pages.sales.checkout')
         ->set('discountPercentage', '0')
-        ->set('tenderedAmount', '600.00') // Subtotal 500 + 12% VAT (60) = 560 total due
+        ->set('tenderedAmount', '600.00') // Subtotal 500 + 0% tax = 500 total due
         ->call('completeSale')
         ->assertHasNoErrors()
         ->assertRedirect();
@@ -164,10 +164,10 @@ test('completing a checkout converts the linked quotation and stores 12% VAT and
     expect($sale)->not->toBeNull()
         ->and($sale->customer_name)->toBe('Don Crisostomo')
         ->and($sale->quotation_id)->toBe($quote->id)
-        ->and((float) $sale->tax_rate)->toBe(12.00)
-        ->and((float) $sale->tax_amount)->toBe(60.00)
-        ->and((float) $sale->total)->toBe(560.00)
-        ->and((float) $sale->change_amount)->toBe(40.00);
+        ->and((float) $sale->tax_rate)->toBe(0.00)
+        ->and((float) $sale->tax_amount)->toBe(0.00)
+        ->and((float) $sale->total)->toBe(500.00)
+        ->and((float) $sale->change_amount)->toBe(100.00);
 
     // Quotation should now be marked as accepted with converted_sale_id
     expect($quote->fresh()->status)->toBe('accepted')
@@ -414,4 +414,106 @@ test('discounted sale displays discount reason and authorizer on receipt', funct
         ->assertSee('Discount (15.00% · Employee)')
         ->assertSee('Employee: Alex Cruz (EMP-09)')
         ->assertSee('Auth: Manager Alex');
+});
+
+test('user can open edit modal, modify quotation line items and details, and save', function () {
+    $manager = User::factory()->create(['role' => 'manager']);
+    $quote = Quotation::create([
+        'user_id' => $manager->id,
+        'quote_number' => 'QUO-EDIT-001',
+        'customer_name' => 'Original Customer',
+        'customer_contact' => '09111111111',
+        'subtotal' => 500.00,
+        'discount_percentage' => 0.00,
+        'discount_amount' => 0.00,
+        'tax_rate' => 0.00,
+        'tax_amount' => 0.00,
+        'total' => 500.00,
+        'status' => 'draft',
+        'valid_until' => now()->addDays(7),
+    ]);
+
+    $quote->items()->create([
+        'description' => 'Original Item',
+        'sku' => 'ORIG-SKU',
+        'package' => '1 gal',
+        'quantity' => 1.0,
+        'unit_price' => 500.00,
+        'subtotal' => 500.00,
+    ]);
+
+    $category = Category::create(['name' => 'Enamel']);
+    $newProduct = Product::create([
+        'category_id' => $category->id,
+        'sku' => 'ADD-SKU-01',
+        'name' => 'Additional Gloss Enamel',
+        'selling_price' => 250.00,
+        'active' => true,
+    ]);
+
+    Volt::actingAs($manager)
+        ->test('pages.sales.quotations')
+        ->call('openEditModal', $quote->id)
+        ->assertSet('showEditModal', true)
+        ->assertSet('editCustomerName', 'Original Customer')
+        ->set('editCustomerName', 'Updated Contractor Corp')
+        ->set('editCustomerContact', '09223334444')
+        ->call('addProductToEdit', $newProduct->id)
+        ->call('saveQuotationChanges')
+        ->assertHasNoErrors()
+        ->assertSet('showEditModal', false);
+
+    $refreshed = $quote->fresh(['items']);
+    expect($refreshed->customer_name)->toBe('Updated Contractor Corp')
+        ->and($refreshed->customer_contact)->toBe('09223334444')
+        ->and($refreshed->items)->toHaveCount(2)
+        ->and((float) $refreshed->subtotal)->toBe(750.00)
+        ->and((float) $refreshed->total)->toBe(750.00);
+});
+
+test('user can view printable quotation with official company header and signature section', function () {
+    $manager = User::factory()->create(['role' => 'manager', 'name' => 'Manager Juan']);
+    $quote = Quotation::create([
+        'user_id' => $manager->id,
+        'quote_number' => 'QUO-PRINT-001',
+        'customer_name' => 'Acme Construction',
+        'customer_contact' => '09334445555',
+        'subtotal' => 1200.00,
+        'discount_percentage' => 10.00,
+        'discount_amount' => 120.00,
+        'tax_rate' => 0.00,
+        'tax_amount' => 0.00,
+        'total' => 1080.00,
+        'status' => 'sent',
+        'valid_until' => now()->addDays(14),
+    ]);
+
+    $quote->items()->create([
+        'description' => 'Heavy Duty Primer',
+        'sku' => 'PRIMER-01',
+        'package' => '4 L',
+        'quantity' => 2.0,
+        'unit_price' => 600.00,
+        'subtotal' => 1200.00,
+    ]);
+
+    test()->actingAs($manager)
+        ->get(route('quotations.print', $quote->id))
+        ->assertOk()
+        ->assertSee('Grade A Paint Center')
+        ->assertSee('QUO-PRINT-001')
+        ->assertSee('Acme Construction')
+        ->assertSee('Heavy Duty Primer')
+        ->assertSee('Prepared &amp; Issued By', false)
+        ->assertSee('Conforme / Accepted By', false);
+});
+
+test('sales report page displays formal signature certification block instead of header label', function () {
+    $manager = User::factory()->create(['role' => 'manager', 'name' => 'Report Auditor']);
+
+    Volt::actingAs($manager)
+        ->test('pages.reports.sales')
+        ->assertDontSee('Report produced by')
+        ->assertSee('Report Prepared &amp; Certified By', false)
+        ->assertSee('Report Auditor');
 });

@@ -99,11 +99,14 @@ class SalesReportPdfController extends Controller
         $endDate = ! empty($dateTo) ? $dateTo : ($maxDate ? Carbon::parse($maxDate)->toDateString() : now()->toDateString());
         $filename = "grade-a-paint-sales-report-{$startDate}-to-{$endDate}.pdf";
 
-        $generatedBy = auth()->user()?->name ? (auth()->user()->name.' ('.ucfirst(auth()->user()->role).')') : 'Store Cashier';
+        $user = auth()->user();
+        $generatedBy = $user?->name ?? 'Store Cashier';
+        $generatedRole = $user ? ucfirst($user->role) : 'Personnel';
 
         return Pdf::loadView('reports.sales-pdf', [
             'generatedAt' => now(),
             'generatedBy' => $generatedBy,
+            'generatedRole' => $generatedRole,
             'filterLabel' => $filterLabel,
             'totalTransactions' => $totalTransactions,
             'grossSubtotal' => $grossSubtotal,

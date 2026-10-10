@@ -159,7 +159,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         <div class="rounded-lg border border-slate-300 bg-white p-3.5 shadow-xs">
             <p class="text-xs font-normal uppercase tracking-wider text-slate-500">Filtered Outflow (Sales / Deductions)</p>
-            <h3 class="tabular-nums text-3xl sm:text-4xl font-light text-rose-700 mt-2 text-right">-{{ number_format($totalOut, 2) }}</h3>
+            <h3 class="tabular-nums text-3xl sm:text-4xl font-light text-slate-900 mt-2 text-right">{{ number_format($totalOut, 2) }}</h3>
             <p class="mt-1 text-[11px] text-slate-400 text-right">Units deducted</p>
         </div>
 

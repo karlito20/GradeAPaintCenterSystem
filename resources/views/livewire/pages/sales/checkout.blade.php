@@ -209,17 +209,16 @@ new #[Layout('layouts.app')] class extends Component {
         return round($this->subtotal() * ($pct / 100), 2);
     }
 
-    public const TAX_RATE = 12.0;
+    public const TAX_RATE = 0.0;
 
     public function taxAmount(): float
     {
-        $afterDiscount = $this->subtotal() - $this->discountAmount();
-        return round($afterDiscount * (self::TAX_RATE / 100), 2);
+        return 0.0;
     }
 
     public function finalTotal(): float
     {
-        return max(0, round($this->subtotal() - $this->discountAmount() + $this->taxAmount(), 2));
+        return max(0, round($this->subtotal() - $this->discountAmount(), 2));
     }
 
     public function changeDue(): float
@@ -655,11 +654,6 @@ new #[Layout('layouts.app')] class extends Component {
                         <span>-{{ $currency::format($this->discountAmount()) }}</span>
                     </div>
                 @endif
-
-                <div class="flex justify-between text-slate-600">
-                    <span class="font-sans font-normal">VAT ({{ number_format(self::TAX_RATE, 0) }}%):</span>
-                    <span class="font-medium text-slate-900">+{{ $currency::format($this->taxAmount()) }}</span>
-                </div>
 
                 <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-2">
                     <span class="font-sans font-bold">Total Due:</span>

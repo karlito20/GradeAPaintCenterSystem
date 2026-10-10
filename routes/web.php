@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\InventoryReportController;
+use App\Http\Controllers\QuotationPrintController;
 use App\Http\Controllers\SaleReceiptController;
 use App\Http\Controllers\SalesReportPdfController;
 use Illuminate\Support\Facades\Route;
@@ -32,6 +33,10 @@ Volt::route('/sales/checkout', 'pages.sales.checkout')
 Volt::route('/sales/quotations', 'pages.sales.quotations')
     ->middleware(['auth', 'verified', 'role:superadmin,admin,manager,mixer'])
     ->name('sales.quotations');
+
+Route::get('/quotations/{quotation}/print', QuotationPrintController::class)
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager,mixer'])
+    ->name('quotations.print');
 
 Volt::route('/reports/sales', 'pages.reports.sales')
     ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])

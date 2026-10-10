@@ -189,21 +189,47 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
     </div>
 
-    <!-- Top Operational KPIs (4 cards in responsive grid) -->
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <!-- 1. Today's Sales -->
+    <!-- Top Operational KPIs (Low and Out of stock cards first, bullet points removed, mixer disallowed from sales card) -->
+    <div class="grid gap-4 sm:grid-cols-2 {{ auth()->user()?->hasRole('mixer') ? 'lg:grid-cols-3' : 'lg:grid-cols-4' }}">
+        <!-- 1. Low Stock (Separate KPI) -->
         <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
             <div class="flex items-center justify-between">
-                <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Today's Sales</span>
-                <span class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase text-emerald-700 tabular-nums">
-                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>{{ $todayTransactionsCount }} txn(s)
+                <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Low Stock</span>
+                <span class="text-[10px] font-semibold uppercase {{ $lowStockCount > 0 ? 'text-amber-700' : 'text-emerald-700' }}">
+                    {{ $lowStockCount > 0 ? 'Attention Needed' : 'Normal' }}
                 </span>
             </div>
-            <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light text-slate-900 text-right">{{ $currency::format($todaySalesTotal) }}</p>
-            <p class="mt-1 text-[11px] text-slate-400 text-right">Gross completed sales</p>
+            <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $lowStockCount > 0 ? 'text-amber-600' : 'text-emerald-600' }} text-right">{{ $lowStockCount }}</p>
+            <p class="mt-1 text-[11px] text-slate-400 text-right">SKUs nearing threshold</p>
         </div>
 
-        <!-- 2. Catalog SKUs -->
+        <!-- 2. Out of Stock (Separate KPI) -->
+        <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Out of Stock</span>
+                <span class="text-[10px] font-semibold uppercase {{ $outOfStockCount > 0 ? 'text-rose-700' : 'text-emerald-700' }}">
+                    {{ $outOfStockCount > 0 ? 'Critical' : 'All In Stock' }}
+                </span>
+            </div>
+            <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $outOfStockCount > 0 ? 'text-rose-600' : 'text-emerald-600' }} text-right">{{ $outOfStockCount }}</p>
+            <p class="mt-1 text-[11px] text-slate-400 text-right">SKUs with zero inventory</p>
+        </div>
+
+        @if (! auth()->user()?->hasRole('mixer'))
+            <!-- 3. Today's Sales (Disallowed for mixer) -->
+            <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
+                <div class="flex items-center justify-between">
+                    <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Today's Sales</span>
+                    <span class="text-[10px] font-semibold uppercase text-emerald-700 tabular-nums">
+                        {{ $todayTransactionsCount }} txn(s)
+                    </span>
+                </div>
+                <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light text-slate-900 text-right">{{ $currency::format($todaySalesTotal) }}</p>
+                <p class="mt-1 text-[11px] text-slate-400 text-right">Gross completed sales</p>
+            </div>
+        @endif
+
+        <!-- 4. Catalog SKUs -->
         <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
             <div class="flex items-center justify-between">
                 <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Catalog SKUs</span>
@@ -212,90 +238,9 @@ new #[Layout('layouts.app')] class extends Component {
             <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light text-slate-900 text-right">{{ $totalProducts }}</p>
             <p class="mt-1 text-[11px] text-slate-400 text-right">Active stocked products</p>
         </div>
-
-        <!-- 3. Low Stock (Separate KPI) -->
-        <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-            <div class="flex items-center justify-between">
-                <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Low Stock</span>
-                <span class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase {{ $lowStockCount > 0 ? 'text-amber-700' : 'text-emerald-700' }}">
-                    <span class="h-1.5 w-1.5 rounded-full {{ $lowStockCount > 0 ? 'bg-amber-500' : 'bg-emerald-500' }}"></span>
-                    {{ $lowStockCount > 0 ? 'Attention Needed' : 'Normal' }}
-                </span>
-            </div>
-            <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $lowStockCount > 0 ? 'text-amber-600' : 'text-emerald-600' }} text-right">{{ $lowStockCount }}</p>
-            <p class="mt-1 text-[11px] text-slate-400 text-right">SKUs nearing threshold</p>
-        </div>
-
-        <!-- 4. Out of Stock (Separate KPI) -->
-        <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-            <div class="flex items-center justify-between">
-                <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Out of Stock</span>
-                <span class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase {{ $outOfStockCount > 0 ? 'text-rose-700' : 'text-emerald-700' }}">
-                    <span class="h-1.5 w-1.5 rounded-full {{ $outOfStockCount > 0 ? 'bg-rose-500' : 'bg-emerald-500' }}"></span>
-                    {{ $outOfStockCount > 0 ? 'Critical' : 'All In Stock' }}
-                </span>
-            </div>
-            <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $outOfStockCount > 0 ? 'text-rose-600' : 'text-emerald-600' }} text-right">{{ $outOfStockCount }}</p>
-            <p class="mt-1 text-[11px] text-slate-400 text-right">SKUs with zero inventory</p>
-        </div>
     </div>
 
-    <!-- 7-Day Sales Report Card (Full Row below KPI cards) -->
-    <div class="rounded-lg border border-slate-200 bg-white p-4 sm:p-5 shadow-xs space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 pb-3">
-            <div class="flex items-center gap-2">
-                <h2 class="font-heading text-sm font-bold uppercase tracking-wider text-slate-800">7-Day Sales Overview</h2>
-                <span class="text-xs text-slate-500">(Daily completed revenue trend)</span>
-            </div>
-            <div class="flex flex-wrap items-center gap-4 text-xs">
-                <div class="border-l border-slate-200 pl-3">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">7-Day Total</span>
-                    <span class="font-semibold text-slate-900 tabular-nums">{{ $currency::format($sevenDaysTotal) }}</span>
-                </div>
-                <div class="border-l border-slate-200 pl-3">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Daily Average</span>
-                    <span class="font-semibold text-slate-900 tabular-nums">{{ $currency::format($sevenDaysAvg) }}</span>
-                </div>
-                <div class="border-l border-slate-200 pl-3">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Transactions</span>
-                    <span class="font-semibold text-slate-900 tabular-nums">{{ $sevenDaysTransactionsCount }} txns</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- 7-Day Bar Chart Visualization -->
-        <div class="pt-2">
-            <div class="grid grid-cols-7 gap-2 sm:gap-4 items-end h-40">
-                @foreach ($sevenDays as $day)
-                    @php
-                        $heightPercent = $maxSales > 0 ? round(($day['total'] / $maxSales) * 100) : 0;
-                        $heightPercent = max(6, min(100, $heightPercent));
-                    @endphp
-                    <div class="flex flex-col items-center h-full justify-end group relative">
-                        <!-- Bar Value on Top -->
-                        <span class="text-[10px] font-semibold text-slate-700 tabular-nums mb-1 opacity-80 group-hover:opacity-100 transition truncate max-w-full">
-                            {{ $day['total'] > 0 ? $currency::format($day['total']) : '₱0' }}
-                        </span>
-                        <!-- Bar Column -->
-                        <div class="w-full max-w-[48px] bg-slate-100 rounded-t overflow-hidden flex flex-col justify-end" style="height: 100%;">
-                            <div class="w-full bg-[#00a3cc] rounded-t transition-all duration-300 group-hover:bg-[#008fb3]" style="height: {{ $heightPercent }}%;"></div>
-                        </div>
-                        <!-- Day & Date Label -->
-                        <span class="text-[11px] font-semibold text-slate-800 mt-1.5 tabular-nums">{{ $day['day'] }}</span>
-                        <span class="text-[10px] text-slate-400 tabular-nums">{{ $day['date'] }}</span>
-                        <!-- Tooltip -->
-                        <div class="absolute bottom-full mb-2 hidden group-hover:block z-30 whitespace-nowrap rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white shadow-xl tabular-nums pointer-events-none">
-                            <p class="font-bold">{{ $day['full_day'] }}, {{ $day['date'] }}</p>
-                            <p class="text-slate-300">Revenue: {{ $currency::format($day['total']) }}</p>
-                            <p class="text-slate-400">{{ $day['count'] }} transaction(s)</p>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
-        </div>
-    </div>
-
-    <!-- Low / Out of Stock Section -->
+    <!-- Low / Out of Stock Section (Moved above the graph) -->
     <div class="space-y-3">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
@@ -432,6 +377,105 @@ new #[Layout('layouts.app')] class extends Component {
                     {{ $lowStockProducts->links() }}
                 </div>
             @endif
+        </div>
+    </div>
+
+    <!-- 7-Day Sales Overview Section (Line graph with consistent header outside) -->
+    <div class="space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div class="flex items-center gap-2">
+                <h2 class="font-heading text-sm font-bold uppercase tracking-wider text-slate-800">7-Day Sales Overview</h2>
+                <span class="font-mono text-xs text-slate-500">(Daily completed revenue trend)</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-4 text-xs">
+                <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">7-Day Total</span>
+                    <span class="font-semibold text-slate-900 tabular-nums">{{ $currency::format($sevenDaysTotal) }}</span>
+                </div>
+                <div class="border-l border-slate-200 pl-3">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Daily Average</span>
+                    <span class="font-semibold text-slate-900 tabular-nums">{{ $currency::format($sevenDaysAvg) }}</span>
+                </div>
+                <div class="border-l border-slate-200 pl-3">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Transactions</span>
+                    <span class="font-semibold text-slate-900 tabular-nums">{{ $sevenDaysTransactionsCount }} txns</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Graph Container -->
+        <div class="overflow-hidden rounded-lg border border-slate-300 bg-white p-4 sm:p-5 shadow-xs">
+            @php
+                $svgWidth = 700;
+                $svgHeight = 160;
+                $padX = 45;
+                $padYTop = 15;
+                $padYBottom = 25;
+                $chartW = $svgWidth - ($padX * 2);
+                $chartH = $svgHeight - $padYTop - $padYBottom;
+                $xStep = $chartW / 6;
+
+                $points = [];
+                foreach ($sevenDays as $idx => $day) {
+                    $x = $padX + ($idx * $xStep);
+                    $ratio = $maxSales > 0 ? ($day['total'] / $maxSales) : 0;
+                    $y = $padYTop + ($chartH * (1 - $ratio));
+                    $points[] = [
+                        'x' => round($x, 1),
+                        'y' => round($y, 1),
+                        'day' => $day,
+                    ];
+                }
+
+                $linePath = 'M ' . implode(' L ', array_map(fn($p) => "{$p['x']},{$p['y']}", $points));
+                $areaPath = $linePath . " L {$points[6]['x']}," . ($svgHeight - $padYBottom) . " L {$points[0]['x']}," . ($svgHeight - $padYBottom) . ' Z';
+            @endphp
+
+            <!-- SVG Line Graph -->
+            <div class="w-full">
+                <svg viewBox="0 0 700 160" class="w-full h-36 sm:h-44 overflow-visible" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="salesLineGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#00a3cc" stop-opacity="0.25" />
+                            <stop offset="100%" stop-color="#00a3cc" stop-opacity="0.01" />
+                        </linearGradient>
+                    </defs>
+
+                    <!-- Horizontal Grid lines -->
+                    <line x1="{{ $padX }}" y1="{{ $padYTop }}" x2="{{ $svgWidth - $padX }}" y2="{{ $padYTop }}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3 3" />
+                    <line x1="{{ $padX }}" y1="{{ $padYTop + ($chartH / 2) }}" x2="{{ $svgWidth - $padX }}" y2="{{ $padYTop + ($chartH / 2) }}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3 3" />
+                    <line x1="{{ $padX }}" y1="{{ $svgHeight - $padYBottom }}" x2="{{ $svgWidth - $padX }}" y2="{{ $svgHeight - $padYBottom }}" stroke="#cbd5e1" stroke-width="1" />
+
+                    <!-- Area Fill & Stroke Path -->
+                    <path d="{{ $areaPath }}" fill="url(#salesLineGrad)" />
+                    <path d="{{ $linePath }}" fill="none" stroke="#00a3cc" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+
+                    <!-- Data Point Circles -->
+                    @foreach ($points as $p)
+                        <circle cx="{{ $p['x'] }}" cy="{{ $p['y'] }}" r="4" fill="#ffffff" stroke="#008fb3" stroke-width="2.5" />
+                    @endforeach
+                </svg>
+            </div>
+
+            <!-- 7-Day Day & Value Column Labels Aligned Below -->
+            <div class="grid grid-cols-7 gap-1 sm:gap-2 pt-3 border-t border-slate-100">
+                @foreach ($sevenDays as $day)
+                    <div class="flex flex-col items-center text-center group relative cursor-default">
+                        <span class="text-[11px] font-semibold text-slate-800">{{ $day['day'] }}</span>
+                        <span class="text-[10px] text-slate-400 tabular-nums">{{ $day['date'] }}</span>
+                        <span class="text-[11px] font-semibold text-slate-700 tabular-nums mt-0.5 truncate max-w-full">
+                            {{ $day['total'] > 0 ? $currency::format($day['total']) : '₱0' }}
+                        </span>
+
+                        <!-- Hover Tooltip -->
+                        <div class="absolute bottom-full mb-2 hidden group-hover:block z-30 whitespace-nowrap rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white shadow-xl tabular-nums pointer-events-none">
+                            <p class="font-bold">{{ $day['full_day'] }}, {{ $day['date'] }}</p>
+                            <p class="text-slate-300">Revenue: {{ $currency::format($day['total']) }}</p>
+                            <p class="text-slate-400">{{ $day['count'] }} transaction(s)</p>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
         </div>
     </div>
 

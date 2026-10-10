@@ -47,7 +47,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $quoteDiscountType = 'none';
     public string $quoteDiscountPercentage = '0';
     public string $quoteDiscountReason = '';
-    public bool $quoteTaxApplied = true;
+    public bool $quoteTaxApplied = false;
 
     // Custom Mix Modal
     public bool $showMixModal = false;
@@ -65,7 +65,7 @@ new #[Layout('layouts.app')] class extends Component {
     public bool $showLoadQuoteModal = false;
     public string $loadQuoteSearch = '';
 
-    public const TAX_RATE = 12.0;
+    public const TAX_RATE = 0.0;
 
     public function mount(): void
     {
@@ -214,8 +214,8 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         $subtotal = $this->cartSubtotal();
-        $taxAmount = round($subtotal * (self::TAX_RATE / 100), 2);
-        $total = round($subtotal + $taxAmount, 2);
+        $taxAmount = 0.0;
+        $total = $subtotal;
 
         try {
             DB::transaction(function () use ($subtotal, $taxAmount, $total): void {
@@ -227,8 +227,8 @@ new #[Layout('layouts.app')] class extends Component {
                     'sold_at' => now(),
                     'type' => $hasCustomMix ? 'mixed' : 'normal',
                     'subtotal' => $subtotal,
-                    'tax_rate' => self::TAX_RATE,
-                    'tax_amount' => $taxAmount,
+                    'tax_rate' => 0.0,
+                    'tax_amount' => 0.0,
                     'total' => $total,
                     'payment_method' => 'cash',
                     'payment_amount' => $total,
@@ -616,9 +616,9 @@ new #[Layout('layouts.app')] class extends Component {
         $discountPct = (float) $this->quoteDiscountPercentage;
         $discountAmt = round($subtotal * ($discountPct / 100), 2);
         $afterDiscount = round($subtotal - $discountAmt, 2);
-        $taxRate = $this->quoteTaxApplied ? self::TAX_RATE : 0.0;
-        $taxAmt = round($afterDiscount * ($taxRate / 100), 2);
-        $total = round($afterDiscount + $taxAmt, 2);
+        $taxRate = 0.0;
+        $taxAmt = 0.0;
+        $total = $afterDiscount;
 
         $quote = DB::transaction(function () use ($subtotal, $discountPct, $discountAmt, $taxRate, $taxAmt, $total): Quotation {
             $q = Quotation::create([
@@ -634,8 +634,8 @@ new #[Layout('layouts.app')] class extends Component {
                 'discount_type' => $discountPct > 0 ? $this->quoteDiscountType : null,
                 'discount_reason' => $discountPct > 0 ? trim($this->quoteDiscountReason) : null,
                 'discount_authorized_by' => (auth()->user()?->isManagerOrAbove() && $discountPct > 0) ? auth()->id() : null,
-                'tax_rate' => $taxRate,
-                'tax_amount' => $taxAmt,
+                'tax_rate' => 0.0,
+                'tax_amount' => 0.0,
                 'total' => $total,
                 'valid_until' => now()->addDays((int) $this->quoteValidDays),
             ]);
@@ -1091,7 +1091,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <span class="text-slate-600">Subtotal ({{ count($cart) }} item{{ count($cart) > 1 ? 's' : '' }})</span>
                         <span class="font-bold tabular-nums text-slate-900">{{ $currency::format($cartSubtotal) }}</span>
                     </div>
-                    <div class="text-[10px] text-slate-400 italic">Tax (12% VAT) & discounts applied at checkout.</div>
+                    <div class="text-[10px] text-slate-400 italic">Discounts applied at checkout.</div>
 
                     {{-- Action Buttons --}}
                     <div class="grid grid-cols-2 gap-2 pt-0.5">
@@ -1187,12 +1187,6 @@ new #[Layout('layouts.app')] class extends Component {
                         </div>
                     </div>
                     <div>
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input wire:model.live="quoteTaxApplied" type="checkbox" class="rounded border-slate-300 text-[#00a3cc] focus:ring-[#00a3cc]" />
-                            <span class="font-semibold text-slate-700">Apply 12% VAT</span>
-                        </label>
-                    </div>
-                    <div>
                         <label class="block font-semibold text-slate-700 mb-1">Notes</label>
                         <textarea wire:model="quoteNotes" rows="2" placeholder="Internal notes or special instructions..."
                             class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-0"></textarea>
@@ -1204,8 +1198,7 @@ new #[Layout('layouts.app')] class extends Component {
                         $qDiscPct = (float) $quoteDiscountPercentage;
                         $qDiscAmt = round($qSubtotal * ($qDiscPct / 100), 2);
                         $qAfterDisc = round($qSubtotal - $qDiscAmt, 2);
-                        $qTaxAmt = $quoteTaxApplied ? round($qAfterDisc * 0.12, 2) : 0;
-                        $qTotal = round($qAfterDisc + $qTaxAmt, 2);
+                        $qTotal = $qAfterDisc;
                     @endphp
                     <div class="rounded bg-slate-50 border border-slate-200 p-3 space-y-1 tabular-nums">
                         <div class="flex justify-between text-slate-600">
@@ -1215,11 +1208,6 @@ new #[Layout('layouts.app')] class extends Component {
                             <div class="flex justify-between text-emerald-700">
                                 <span>Discount ({{ number_format($qDiscPct, 2) }}%):</span>
                                 <span>-{{ $currency::format($qDiscAmt) }}</span>
-                            </div>
-                        @endif
-                        @if ($qTaxAmt > 0)
-                            <div class="flex justify-between text-slate-600">
-                                <span>VAT (12%):</span><span>{{ $currency::format($qTaxAmt) }}</span>
                             </div>
                         @endif
                         <div class="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-1">

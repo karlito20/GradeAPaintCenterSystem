@@ -135,12 +135,14 @@ class InventoryReportController extends Controller
         }
 
         $user = auth()->user();
-        $generatedBy = $user?->name ? ($user->name.' ('.ucfirst($user->role).')') : 'Store Staff';
+        $generatedBy = $user?->name ?? 'Store Staff';
+        $generatedRole = $user ? ucfirst($user->role) : 'Personnel';
 
         return Pdf::loadView('reports.inventory-pdf', [
             'reportItems' => $reportItems,
             'generatedAt' => now(),
             'generatedBy' => $generatedBy,
+            'generatedRole' => $generatedRole,
             'totalSkus' => $totalSkus,
             'lowStockCount' => $lowStockCount,
             'outOfStockCount' => $outOfStockCount,

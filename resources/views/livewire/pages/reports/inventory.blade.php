@@ -242,7 +242,7 @@ new #[Layout('layouts.app')] class extends Component {
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-300 pb-3">
         <div>
             <h1 class="font-heading text-xl font-bold tracking-tight text-slate-900">Inventory Stock Report</h1>
-            <p class="text-[11px] text-slate-500 mt-0.5">Report produced by <strong class="text-slate-700">{{ auth()->user()->name }}</strong> ({{ ucfirst(auth()->user()->role) }})</p>
+            <p class="text-[11px] text-slate-500 mt-0.5">Stock movements, balances, valuation, and threshold analysis</p>
         </div>
         <div class="flex items-center gap-2">
             <a 
@@ -543,6 +543,23 @@ new #[Layout('layouts.app')] class extends Component {
                 {{ $products->links() }}
             </div>
         @endif
+    </div>
+
+    <!-- Formal Report Certification & Signature Block -->
+    <div class="pt-4 border-t border-slate-300 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div class="text-[11px] text-slate-500">
+            <p>Official system generated report reflecting verified physical inventory audit records.</p>
+            <p class="text-[10px] text-slate-400 mt-0.5">Report Period: {{ $dateFrom ? \Carbon\Carbon::parse($dateFrom)->format('M d, Y') : 'Start' }} to {{ $dateTo ? \Carbon\Carbon::parse($dateTo)->format('M d, Y') : 'Present' }}</p>
+        </div>
+        <div class="w-full sm:w-72 rounded-lg border border-slate-300 bg-white p-4 shadow-xs">
+            <span class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-8">
+                Report Prepared &amp; Certified By:
+            </span>
+            <div class="border-b border-slate-900 mb-1.5"></div>
+            <p class="font-bold text-slate-900 text-xs">{{ auth()->user()->name }}</p>
+            <p class="text-[11px] text-slate-500">{{ ucfirst(auth()->user()->role) }}</p>
+            <p class="text-[10px] text-slate-400 mt-2">Date Signed: <span class="font-mono">____________________</span></p>
+        </div>
     </div>
 
     <!-- Global Floating Context Menu -->

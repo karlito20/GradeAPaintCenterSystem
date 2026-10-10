@@ -127,13 +127,6 @@
                 @endif
             @endif
 
-            @if ((float) $sale->tax_amount > 0 || (float) $sale->tax_rate > 0)
-                <div class="flex justify-between text-slate-600">
-                    <span>12% VAT Included:</span>
-                    <span>{{ \App\Support\Currency::format($sale->tax_amount) }}</span>
-                </div>
-            @endif
-
             <div class="flex justify-between text-sm font-black text-slate-900 border-t border-slate-300 pt-1.5 pb-0.5">
                 <span>TOTAL DUE:</span>
                 <span>{{ \App\Support\Currency::format($sale->total) }}</span>

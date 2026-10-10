@@ -220,7 +220,7 @@ new #[Layout('layouts.app')] class extends Component {
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-300">
         <div>
             <h1 class="font-heading text-xl font-bold tracking-tight text-slate-900">Sales Report</h1>
-            <p class="text-[11px] text-slate-500 mt-0.5">Report produced by <strong class="text-slate-700">{{ auth()->user()->name }}</strong> ({{ ucfirst(auth()->user()->role) }})</p>
+            <p class="text-[11px] text-slate-500 mt-0.5">Revenue summaries, transactional breakdown, and product volume analysis</p>
         </div>
         <div class="flex items-center gap-2">
             <a href="{{ route('reports.sales.pdf', ['date_from' => $dateFrom, 'date_to' => $dateTo, 'sale_type' => $saleType, 'user_id' => $userId]) }}"
@@ -254,32 +254,25 @@ new #[Layout('layouts.app')] class extends Component {
     </div>
 
     <!-- KPI Summary Row -->
-    <div class="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+    <div class="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
         <!-- Total Revenue -->
         <div class="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
             <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total Net Revenue</span>
             <p class="text-xl sm:text-2xl font-light tabular-nums text-emerald-700 mt-1 text-right">{{ $currency::format($totalRevenue) }}</p>
-            <p class="text-[10px] text-slate-400 mt-0.5 text-right">Gross cash + VAT</p>
-        </div>
-
-        <!-- 12% VAT Tax Collected -->
-        <div class="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
-            <span class="text-[10px] font-semibold uppercase tracking-wider text-purple-700">12% VAT Collected</span>
-            <p class="text-xl sm:text-2xl font-light tabular-nums text-purple-800 mt-1 text-right">{{ $currency::format($totalTax) }}</p>
-            <p class="text-[10px] text-slate-400 mt-0.5 text-right">Value Added Tax</p>
+            <p class="text-[10px] text-slate-400 mt-0.5 text-right">Gross completed sales</p>
         </div>
 
         <!-- Gross Subtotal -->
         <div class="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
             <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Gross Sales</span>
             <p class="text-xl sm:text-2xl font-light tabular-nums text-slate-800 mt-1 text-right">{{ $currency::format($grossSubtotal) }}</p>
-            <p class="text-[10px] text-slate-400 mt-0.5 text-right">Before discounts/VAT</p>
+            <p class="text-[10px] text-slate-400 mt-0.5 text-right">Before discounts</p>
         </div>
 
-        <!-- Discounts Given -->
+        <!-- Discounts Given (Not red, no negative sign) -->
         <div class="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
             <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Discounts Given</span>
-            <p class="text-xl sm:text-2xl font-light tabular-nums text-rose-700 mt-1 text-right">-{{ $currency::format($totalDiscounts) }}</p>
+            <p class="text-xl sm:text-2xl font-light tabular-nums text-slate-900 mt-1 text-right">{{ $currency::format($totalDiscounts) }}</p>
             <p class="text-[10px] text-slate-400 mt-0.5 text-right">Customer discounts</p>
         </div>
 
@@ -368,7 +361,6 @@ new #[Layout('layouts.app')] class extends Component {
                             <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Invoices</th>
                             <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Gross Sales</th>
                             <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Discounts</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">12% VAT Tax</th>
                             <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap font-bold">Total Collected</th>
                             <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Avg Ticket</th>
                         </tr>
@@ -385,11 +377,8 @@ new #[Layout('layouts.app')] class extends Component {
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
                                     {{ $currency::format($day->gross) }}
                                 </td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-rose-700 whitespace-nowrap">
-                                    {{ (float) $day->discounts > 0 ? '-' . $currency::format($day->discounts) : '—' }}
-                                </td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-purple-800 font-medium whitespace-nowrap">
-                                    {{ $currency::format($day->tax) }}
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
+                                    {{ (float) $day->discounts > 0 ? $currency::format($day->discounts) : '—' }}
                                 </td>
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold text-emerald-800 whitespace-nowrap">
                                     {{ $currency::format($day->revenue) }}
@@ -400,7 +389,7 @@ new #[Layout('layouts.app')] class extends Component {
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
+                                <td colspan="6" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
                                     No sales transactions recorded in the selected period.
                                 </td>
                             </tr>
@@ -412,8 +401,7 @@ new #[Layout('layouts.app')] class extends Component {
                                 <td class="border border-slate-300 px-2.5 py-1.5 uppercase tracking-wider text-slate-900">Total Period Summary</td>
                                 <td class="border border-slate-300 px-2.5 py-1.5 text-center tabular-nums text-slate-900">{{ number_format($totalTransactions) }}</td>
                                 <td class="border border-slate-300 px-2.5 py-1.5 text-right tabular-nums text-slate-900">{{ $currency::format($grossSubtotal) }}</td>
-                                <td class="border border-slate-300 px-2.5 py-1.5 text-right tabular-nums text-rose-700">-{{ $currency::format($totalDiscounts) }}</td>
-                                <td class="border border-slate-300 px-2.5 py-1.5 text-right tabular-nums text-purple-900">{{ $currency::format($totalTax) }}</td>
+                                <td class="border border-slate-300 px-2.5 py-1.5 text-right tabular-nums text-slate-900">{{ $currency::format($totalDiscounts) }}</td>
                                 <td class="border border-slate-300 px-2.5 py-1.5 text-right tabular-nums text-emerald-900 text-sm">{{ $currency::format($totalRevenue) }}</td>
                                 <td class="border border-slate-300 px-2.5 py-1.5 text-right tabular-nums text-slate-900">{{ $currency::format($avgOrderValue) }}</td>
                             </tr>
@@ -436,7 +424,6 @@ new #[Layout('layouts.app')] class extends Component {
                             <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Type</th>
                             <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Subtotal</th>
                             <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Discount</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">12% VAT</th>
                             <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap font-bold">Total Paid</th>
                             <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap w-16">Actions</th>
                         </tr>
@@ -472,11 +459,8 @@ new #[Layout('layouts.app')] class extends Component {
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
                                     {{ $currency::format($sale->subtotal) }}
                                 </td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-rose-700 whitespace-nowrap">
-                                    {{ (float) $sale->discount_amount > 0 ? '-' . $currency::format($sale->discount_amount) : '—' }}
-                                </td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-purple-800 font-medium whitespace-nowrap">
-                                    {{ $currency::format($sale->tax_amount) }}
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
+                                    {{ (float) $sale->discount_amount > 0 ? $currency::format($sale->discount_amount) : '—' }}
                                 </td>
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900 whitespace-nowrap">
                                     {{ $currency::format($sale->total) }}
@@ -498,7 +482,7 @@ new #[Layout('layouts.app')] class extends Component {
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="10" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
+                                <td colspan="9" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
                                     No transactions found matching current filters.
                                 </td>
                             </tr>
@@ -549,6 +533,23 @@ new #[Layout('layouts.app')] class extends Component {
                 </table>
             </div>
         @endif
+    </div>
+
+    <!-- Formal Report Certification & Signature Block -->
+    <div class="pt-4 border-t border-slate-300 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div class="text-[11px] text-slate-500">
+            <p>Official system generated report reflecting verified POS audit records.</p>
+            <p class="text-[10px] text-slate-400 mt-0.5">Report Period: {{ $dateFrom ? \Carbon\Carbon::parse($dateFrom)->format('M d, Y') : 'Start' }} to {{ $dateTo ? \Carbon\Carbon::parse($dateTo)->format('M d, Y') : 'Present' }}</p>
+        </div>
+        <div class="w-full sm:w-72 rounded-lg border border-slate-300 bg-white p-4 shadow-xs">
+            <span class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-8">
+                Report Prepared &amp; Certified By:
+            </span>
+            <div class="border-b border-slate-900 mb-1.5"></div>
+            <p class="font-bold text-slate-900 text-xs">{{ auth()->user()->name }}</p>
+            <p class="text-[11px] text-slate-500">{{ ucfirst(auth()->user()->role) }}</p>
+            <p class="text-[10px] text-slate-400 mt-2">Date Signed: <span class="font-mono">____________________</span></p>
+        </div>
     </div>
 
     <!-- Floating Context Menu -->
