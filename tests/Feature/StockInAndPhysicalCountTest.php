@@ -30,11 +30,12 @@ test('stock-in receiving updates inventory and logs movements and audits', funct
         'active' => true,
     ]);
 
-    Inventory::create(['product_id' => $product->id, 'quantity' => 4.0]);
+    Inventory::create(['product_id' => $product->id, 'location' => 'storage', 'quantity' => 4.0]);
 
     Volt::actingAs($user)
         ->test('pages.inventory.stock-in')
         ->set('receivedAt', now()->toDateString())
+        ->set('reference', 'DR-9921')
         ->set('notes', 'Supplier Delivery Batch #9921')
         ->set('productId', (string) $product->id)
         ->set('quantity', '12.0')
@@ -44,11 +45,12 @@ test('stock-in receiving updates inventory and logs movements and audits', funct
         ->assertHasNoErrors();
 
     // Verify inventory incremented from 4.0 to 16.0
-    expect((float) $product->fresh()->inventory->quantity)->toBe(16.0);
+    expect((float) $product->fresh()->getInventory('storage')->quantity)->toBe(16.0);
 
     // Verify StockIn record
     $stockIn = StockIn::latest('id')->first();
     expect($stockIn)->not->toBeNull()
+        ->and($stockIn->reference)->toBe('DR-9921')
         ->and($stockIn->notes)->toBe('Supplier Delivery Batch #9921')
         ->and($stockIn->items->count())->toBe(1)
         ->and((float) $stockIn->items->first()->quantity)->toBe(12.0)
@@ -65,6 +67,35 @@ test('stock-in receiving updates inventory and logs movements and audits', funct
     $audit = AuditLog::where('auditable_type', StockIn::class)->where('auditable_id', $stockIn->id)->first();
     expect($audit)->not->toBeNull()
         ->and($audit->event)->toBe('stock_in_created');
+});
+
+test('stock-in requires delivery receipt DR number', function () {
+    $user = User::factory()->create(['role' => 'manager']);
+    $brand = Brand::create(['name' => 'Davies', 'active' => true]);
+    $category = Category::create(['name' => 'Megacryl', 'active' => true]);
+    $unit = PackageUnit::create(['name' => 'Gallon', 'abbreviation' => 'gal', 'active' => true]);
+
+    $product = Product::create([
+        'sku' => 'DAV-WHITE-GAL-REQ',
+        'name' => 'Davies Megacryl White DR Test',
+        'brand_id' => $brand->id,
+        'category_id' => $category->id,
+        'package_unit_id' => $unit->id,
+        'package_size' => 4.0,
+        'selling_price' => 620.00,
+        'low_stock_threshold' => 5,
+        'active' => true,
+    ]);
+
+    Volt::actingAs($user)
+        ->test('pages.inventory.stock-in')
+        ->set('receivedAt', now()->toDateString())
+        ->set('reference', '')
+        ->set('productId', (string) $product->id)
+        ->set('quantity', '5.0')
+        ->call('addItem')
+        ->call('saveStockIn')
+        ->assertHasErrors(['reference' => 'required']);
 });
 
 test('weekly physical inventory reconciles stock with dipstick variance and creates adjustment movements', function () {
@@ -86,7 +117,7 @@ test('weekly physical inventory reconciles stock with dipstick variance and crea
     ]);
 
     // Initial system stock is 10.0
-    Inventory::create(['product_id' => $product->id, 'quantity' => 10.0]);
+    Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 10.0]);
 
     // Staff performs weekly physical count and measures 8.5 gal (shortage of 1.5 due to partial dipstick mixing)
     Volt::actingAs($user)
@@ -99,7 +130,7 @@ test('weekly physical inventory reconciles stock with dipstick variance and crea
         ->assertHasNoErrors();
 
     // Verify official inventory replaced with physical measurement
-    expect((float) $product->fresh()->inventory->quantity)->toBe(8.5);
+    expect((float) $product->fresh()->getInventory('storefront')->quantity)->toBe(8.5);
 
     // Verify PhysicalInventory record
     $audit = PhysicalInventory::latest('id')->first();

@@ -3,6 +3,7 @@
 use App\Models\AuditLog;
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\Container;
 use App\Models\Inventory;
 use App\Models\PackageUnit;
 use App\Models\Product;
@@ -30,7 +31,7 @@ test('a cashier can save the pos cart as a quotation and load it back into the c
         'low_stock_threshold' => 2,
         'active' => true,
     ]);
-    Inventory::create(['product_id' => $product->id, 'quantity' => 20.0]);
+    Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 20.0]);
 
     // Add product to POS cart, open quote modal, and save quote
     Volt::actingAs($user)
@@ -118,7 +119,9 @@ test('completing a checkout converts the linked quotation and stores 12% VAT and
         'selling_price' => 500.00,
         'active' => true,
     ]);
-    Inventory::create(['product_id' => $product->id, 'quantity' => 10.0]);
+    Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 10.0]);
+    Container::create(['product_id' => $product->id, 'location' => 'storefront', 'identifier' => 'CONT-Q-1', 'capacity' => 1, 'current_quantity' => 1, 'is_sealed' => true]);
+    Container::create(['product_id' => $product->id, 'location' => 'storefront', 'identifier' => 'CONT-Q-2', 'capacity' => 1, 'current_quantity' => 1, 'is_sealed' => true]);
 
     $quote = Quotation::create([
         'user_id' => $user->id,
@@ -316,10 +319,10 @@ test('mixer can access quotations list and details', function () {
         ->assertSet('showDetailModal', true);
 });
 
-test('mixer checkout with discount requires manager password authorization', function () {
-    $mixer = User::factory()->create(['role' => 'mixer']);
-    $manager = User::factory()->create([
-        'role' => 'manager',
+test('cashier checkout with discount requires admin password authorization', function () {
+    $staff = User::factory()->create(['role' => 'manager']);
+    $admin = User::factory()->create([
+        'role' => 'admin',
         'password' => Hash::make('secret123'),
     ]);
 
@@ -331,7 +334,9 @@ test('mixer checkout with discount requires manager password authorization', fun
         'selling_price' => 1000.00,
         'active' => true,
     ]);
-    Inventory::create(['product_id' => $product->id, 'quantity' => 10.0]);
+    Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 10.0]);
+    Container::create(['product_id' => $product->id, 'location' => 'storefront', 'identifier' => 'CONT-Q-1', 'capacity' => 1, 'current_quantity' => 1, 'is_sealed' => true]);
+    Container::create(['product_id' => $product->id, 'location' => 'storefront', 'identifier' => 'CONT-Q-2', 'capacity' => 1, 'current_quantity' => 1, 'is_sealed' => true]);
 
     session([
         'pos.cart' => [
@@ -347,8 +352,8 @@ test('mixer checkout with discount requires manager password authorization', fun
         ],
     ]);
 
-    // 1. Mixer attempts to complete sale with discount without authorization -> fails
-    $test = Volt::actingAs($mixer)
+    // 1. Staff attempts to complete sale with discount without authorization -> fails
+    $test = Volt::actingAs($staff)
         ->test('pages.sales.checkout')
         ->set('discountPercentage', '10')
         ->set('discountReason', 'Regular customer loyalty discount')
@@ -356,20 +361,20 @@ test('mixer checkout with discount requires manager password authorization', fun
         ->call('completeSale')
         ->assertHasErrors(['discountPercentage']);
 
-    // 2. Authorizing with incorrect manager password -> fails
-    $test->set('managerAuthUserId', $manager->id)
+    // 2. Authorizing with incorrect manager/admin password -> fails
+    $test->set('managerAuthUserId', $admin->id)
         ->set('managerAuthPassword', 'wrongpassword')
         ->call('authorizeDiscount')
         ->assertHasErrors(['managerAuthPassword']);
 
-    // 3. Authorizing with correct manager password -> succeeds
+    // 3. Authorizing with correct admin password -> succeeds
     $test->set('managerAuthPassword', 'secret123')
         ->call('authorizeDiscount')
         ->assertHasNoErrors()
         ->assertSet('discountAuthorized', true)
-        ->assertSet('discountAuthorizedBy', $manager->id);
+        ->assertSet('discountAuthorizedBy', $admin->id);
 
-    // 4. Now mixer can complete the sale
+    // 4. Now staff can complete the sale
     $test->call('completeSale')
         ->assertHasNoErrors()
         ->assertRedirect();
@@ -378,13 +383,37 @@ test('mixer checkout with discount requires manager password authorization', fun
     expect($sale)->not->toBeNull()
         ->and((float) $sale->discount_percentage)->toBe(10.00)
         ->and($sale->discount_reason)->toBe('Regular customer loyalty discount')
-        ->and($sale->discount_authorized_by)->toBe($manager->id);
+        ->and($sale->discount_authorized_by)->toBe($admin->id);
 
-    // Verify discount audit log records authorizing manager
+    // Verify discount audit log records authorizing admin
     $audit = AuditLog::where('event', 'sale_discount_applied')->latest('id')->first();
     expect($audit)->not->toBeNull()
-        ->and($audit->context['authorized_by_id'])->toBe($manager->id)
-        ->and($audit->context['cashier_role'])->toBe('mixer');
+        ->and($audit->context['authorized_by_id'])->toBe($admin->id)
+        ->and($audit->context['cashier_role'])->toBe('manager');
+});
+
+test('mixer is forbidden from checkout and pos but can access quotations and custom mixes', function () {
+    $mixer = User::factory()->create(['role' => 'mixer']);
+
+    // Mixer cannot access checkout page
+    $this->actingAs($mixer)
+        ->get(route('sales.checkout'))
+        ->assertForbidden();
+
+    // Mixer cannot access POS page
+    $this->actingAs($mixer)
+        ->get(route('sales.index'))
+        ->assertForbidden();
+
+    // Mixer can access quotations
+    $this->actingAs($mixer)
+        ->get(route('sales.quotations'))
+        ->assertOk();
+
+    // Mixer can access custom mixes
+    $this->actingAs($mixer)
+        ->get(route('sales.custom-mixes'))
+        ->assertOk();
 });
 
 test('discounted sale displays discount reason and authorizer on receipt', function () {
@@ -411,7 +440,7 @@ test('discounted sale displays discount reason and authorizer on receipt', funct
     test()->actingAs($manager)
         ->get("/sales/{$sale->id}/receipt")
         ->assertOk()
-        ->assertSee('Discount (15.00% · Employee)')
+        ->assertSee('Discount (15.00% - Employee)')
         ->assertSee('Employee: Alex Cruz (EMP-09)')
         ->assertSee('Auth: Manager Alex');
 });
@@ -508,12 +537,57 @@ test('user can view printable quotation with official company header and signatu
         ->assertSee('Conforme / Accepted By', false);
 });
 
-test('sales report page displays formal signature certification block instead of header label', function () {
+test('sales report page does not display signature certification block on web page', function () {
     $manager = User::factory()->create(['role' => 'manager', 'name' => 'Report Auditor']);
 
     Volt::actingAs($manager)
         ->test('pages.reports.sales')
         ->assertDontSee('Report produced by')
-        ->assertSee('Report Prepared &amp; Certified By', false)
-        ->assertSee('Report Auditor');
+        ->assertDontSee('Report Prepared &amp; Certified By', false);
+});
+
+test('user can create a quotation directly on the quotation page using the catalog selector and load it into pos', function () {
+    $user = User::factory()->create(['role' => 'manager']);
+    $brand = Brand::create(['name' => 'Boysen', 'active' => true]);
+    $cat = Category::create(['name' => 'Latex', 'active' => true]);
+    $unit = PackageUnit::create(['name' => 'Gallon', 'abbreviation' => 'gal', 'active' => true]);
+
+    $product = Product::create([
+        'sku' => 'QUOTE-CAT-01',
+        'name' => 'Boysen Quick Dry Enamel',
+        'brand_id' => $brand->id,
+        'category_id' => $cat->id,
+        'package_unit_id' => $unit->id,
+        'selling_price' => 750.00,
+        'active' => true,
+    ]);
+    Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 15.0]);
+
+    // Create quote on quotations page
+    Volt::actingAs($user)
+        ->test('pages.sales.quotations')
+        ->call('openCreateModal')
+        ->assertSet('showEditModal', true)
+        ->call('addProductToEdit', $product->id)
+        ->set('editCustomerName', 'Davao Engineering Corp')
+        ->set('editCustomerContact', '0922-333-4444')
+        ->call('saveQuotationChanges')
+        ->assertHasNoErrors()
+        ->assertSet('showEditModal', false);
+
+    $quote = Quotation::where('customer_name', 'Davao Engineering Corp')->first();
+    expect($quote)->not->toBeNull()
+        ->and((float) $quote->subtotal)->toBe(750.00)
+        ->and((float) $quote->discount_amount)->toBe(0.00)
+        ->and((float) $quote->total)->toBe(750.00)
+        ->and($quote->items)->toHaveCount(1);
+
+    // Verify it can be loaded into POS cart
+    Volt::actingAs($user)
+        ->test('pages.sales.index')
+        ->call('loadQuote', $quote->id)
+        ->assertHasNoErrors();
+
+    expect(session('pos.cart'))->not->toBeEmpty()
+        ->and(session('pos.quotation_id'))->toBe($quote->id);
 });

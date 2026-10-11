@@ -17,6 +17,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $lowStockBrand = '';
     public string $lowStockCategory = '';
     public string $lowStockStatus = '';
+    public int $perPage = 15;
 
     public function updatedLowStockSearch(): void
     {
@@ -34,6 +35,11 @@ new #[Layout('layouts.app')] class extends Component {
     }
 
     public function updatedLowStockStatus(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedPerPage(): void
     {
         $this->resetPage();
     }
@@ -74,56 +80,60 @@ new #[Layout('layouts.app')] class extends Component {
         // Separate Low Stock and Out of Stock counts
         $lowStockCount = Product::query()
             ->where('active', true)
-            ->whereHas('inventory', function ($q) {
-                $q->whereRaw('inventories.quantity > 0 AND inventories.quantity <= products.low_stock_threshold');
+            ->whereHas('inventories', function ($q) {
+                $q->groupBy('product_id')->havingRaw('SUM(quantity) > 0 AND SUM(quantity) <= products.low_stock_threshold');
             })
             ->count();
 
         $outOfStockCount = Product::query()
             ->where('active', true)
             ->where(function ($q) {
-                $q->whereDoesntHave('inventory')
-                    ->orWhereHas('inventory', fn ($sub) => $sub->where('quantity', '<=', 0));
+                $q->whereDoesntHave('inventories')->orWhereHas('inventories', function ($sub) {
+                    $sub->groupBy('product_id')->havingRaw('SUM(quantity) <= 0');
+                });
             })
             ->count();
 
         // Low / Out stock query with pagination
         $lowStockQuery = Product::query()
-            ->with(['inventory', 'packageUnit', 'brand'])
+            ->with(['inventories', 'packageUnit', 'brand', 'category'])
             ->where('active', true)
             ->where(function ($q) {
-                $q->whereDoesntHave('inventory')
-                    ->orWhereHas('inventory', function ($sub) {
-                        $sub->whereRaw('inventories.quantity <= products.low_stock_threshold');
-                    });
+                $q->whereDoesntHave('inventories')->orWhereHas('inventories', function ($sub) {
+                    $sub->groupBy('product_id')->havingRaw('SUM(quantity) <= products.low_stock_threshold');
+                });
             })
             ->when($this->lowStockSearch, function ($q) {
                 $term = '%' . trim($this->lowStockSearch) . '%';
                 $q->where(function ($sub) use ($term) {
-                    $sub->where('name', 'like', $term)
-                        ->orWhere('sku', 'like', $term);
+                    $sub->where('name', 'like', $term)->orWhere('sku', 'like', $term);
                 });
             })
-            ->when($this->lowStockBrand, fn ($q) => $q->where('brand_id', $this->lowStockBrand))
-            ->when($this->lowStockCategory, fn ($q) => $q->where('category_id', $this->lowStockCategory))
+            ->when($this->lowStockBrand, fn($q) => $q->where('brand_id', $this->lowStockBrand))
+            ->when($this->lowStockCategory, fn($q) => $q->where('category_id', $this->lowStockCategory))
             ->when($this->lowStockStatus === 'out', function ($q) {
                 $q->where(function ($sub) {
-                    $sub->whereDoesntHave('inventory')
-                        ->orWhereHas('inventory', fn ($inv) => $inv->where('quantity', '<=', 0));
+                    $sub->whereDoesntHave('inventories')->orWhereHas('inventories', function ($inv) {
+                        $inv->groupBy('product_id')->havingRaw('SUM(quantity) <= 0');
+                    });
                 });
             })
             ->when($this->lowStockStatus === 'low', function ($q) {
-                $q->whereHas('inventory', fn ($sub) => $sub->whereRaw('quantity > 0 AND quantity <= products.low_stock_threshold'));
+                $q->whereHas('inventories', function ($sub) {
+                    $sub->groupBy('product_id')->havingRaw('SUM(quantity) > 0 AND SUM(quantity) <= products.low_stock_threshold');
+                });
             })
             ->orderBy('name');
 
         $todaySalesTotal = (float) Sale::whereDate('sold_at', $today)->sum('total');
         $todayTransactionsCount = Sale::whereDate('sold_at', $today)->count();
+        $physicalCheckCount = Product::where('active', true)->where('requires_physical_check', true)->count();
 
         return view('livewire.pages.dashboard', [
             'totalProducts' => $totalProducts,
             'lowStockCount' => $lowStockCount,
             'outOfStockCount' => $outOfStockCount,
+            'physicalCheckCount' => $physicalCheckCount,
             'todaySalesTotal' => $todaySalesTotal,
             'todayTransactionsCount' => $todayTransactionsCount,
             'sevenDays' => $sevenDays,
@@ -131,7 +141,7 @@ new #[Layout('layouts.app')] class extends Component {
             'sevenDaysAvg' => $sevenDaysAvg,
             'sevenDaysTransactionsCount' => $sevenDaysTransactionsCount,
             'maxSales' => $maxSales,
-            'lowStockProducts' => $lowStockQuery->paginate(15),
+            'lowStockProducts' => $lowStockQuery->paginate($this->perPage),
             'brands' => Brand::where('active', true)->orderBy('name')->get(),
             'categories' => Category::where('active', true)->orderBy('name')->get(),
             'currency' => Currency::class,
@@ -139,53 +149,47 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<div 
-    x-data="{
-        contextMenu: {
-            open: false,
-            x: 0,
-            y: 0,
-            item: null,
-            openAt(x, y, item) {
-                this.item = item;
-                this.x = x;
-                this.y = y;
-                this.open = true;
-                this.$nextTick(() => {
-                    const el = this.$refs.floatingMenu;
-                    if (!el) return;
-                    const r = el.getBoundingClientRect();
-                    if (this.x + r.width > window.innerWidth - 8) {
-                        this.x = Math.max(8, window.innerWidth - r.width - 8);
-                    }
-                    if (this.y + r.height > window.innerHeight - 8) {
-                        this.y = Math.max(8, window.innerHeight - r.height - 8);
-                    }
-                });
-            },
-            openFromButton(event, item) {
-                const btn = event.currentTarget.getBoundingClientRect();
-                this.openAt(btn.right - 176, btn.bottom + 4, item);
-            },
-            openFromEvent(event, item) {
-                this.openAt(event.clientX, event.clientY, item);
-            },
-            close() {
-                this.open = false;
-                this.item = null;
-            }
+<div x-data="{
+    contextMenu: {
+        open: false,
+        x: 0,
+        y: 0,
+        item: null,
+        openAt(x, y, item) {
+            this.item = item;
+            this.x = x;
+            this.y = y;
+            this.open = true;
+            this.$nextTick(() => {
+                const el = this.$refs.floatingMenu;
+                if (!el) return;
+                const r = el.getBoundingClientRect();
+                if (this.x + r.width > window.innerWidth - 8) {
+                    this.x = Math.max(8, window.innerWidth - r.width - 8);
+                }
+                if (this.y + r.height > window.innerHeight - 8) {
+                    this.y = Math.max(8, window.innerHeight - r.height - 8);
+                }
+            });
+        },
+        openFromButton(event, item) {
+            const btn = event.currentTarget.getBoundingClientRect();
+            this.openAt(btn.right - 176, btn.bottom + 4, item);
+        },
+        openFromEvent(event, item) {
+            this.openAt(event.clientX, event.clientY, item);
+        },
+        close() {
+            this.open = false;
+            this.item = null;
         }
-    }"
-    @click.window="contextMenu.close()"
-    @keydown.escape.window="contextMenu.close()"
-    @scroll.window="contextMenu.close()"
-    @resize.window="contextMenu.close()"
-    class="space-y-6 w-full min-w-0"
->
+    }
+}" @click.window="contextMenu.close()" @keydown.escape.window="contextMenu.close()"
+    @scroll.window="contextMenu.close()" @resize.window="contextMenu.close()" class="space-y-6 w-full min-w-0">
     <!-- Header -->
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-300 pb-3">
         <div>
-            <h1 class="font-heading text-2xl font-bold tracking-tight text-slate-900">Dashboard</h1>
+            <h1 class="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Dashboard</h1>
         </div>
     </div>
 
@@ -195,328 +199,504 @@ new #[Layout('layouts.app')] class extends Component {
         <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
             <div class="flex items-center justify-between">
                 <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Low Stock</span>
-                <span class="text-[10px] font-semibold uppercase {{ $lowStockCount > 0 ? 'text-amber-700' : 'text-emerald-700' }}">
+                <span
+                    class="text-[10px] font-semibold uppercase {{ $lowStockCount > 0 ? 'text-amber-700' : 'text-emerald-700' }}">
                     {{ $lowStockCount > 0 ? 'Attention Needed' : 'Normal' }}
                 </span>
             </div>
-            <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $lowStockCount > 0 ? 'text-amber-600' : 'text-emerald-600' }} text-right">{{ $lowStockCount }}</p>
+            <p
+                class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $lowStockCount > 0 ? 'text-amber-600' : 'text-emerald-600' }} text-right">
+                {{ $lowStockCount }}</p>
             <p class="mt-1 text-[11px] text-slate-400 text-right">SKUs nearing threshold</p>
         </div>
 
         <!-- 2. Out of Stock (Separate KPI) -->
         <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
             <div class="flex items-center justify-between">
-                <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Out of Stock</span>
-                <span class="text-[10px] font-semibold uppercase {{ $outOfStockCount > 0 ? 'text-rose-700' : 'text-emerald-700' }}">
+                <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Out of
+                    Stock</span>
+                <span
+                    class="text-[10px] font-semibold uppercase {{ $outOfStockCount > 0 ? 'text-rose-700' : 'text-emerald-700' }}">
                     {{ $outOfStockCount > 0 ? 'Critical' : 'All In Stock' }}
                 </span>
             </div>
-            <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $outOfStockCount > 0 ? 'text-rose-600' : 'text-emerald-600' }} text-right">{{ $outOfStockCount }}</p>
+            <p
+                class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $outOfStockCount > 0 ? 'text-rose-600' : 'text-emerald-600' }} text-right">
+                {{ $outOfStockCount }}</p>
             <p class="mt-1 text-[11px] text-slate-400 text-right">SKUs with zero inventory</p>
         </div>
 
-        @if (! auth()->user()?->hasRole('mixer'))
-            <!-- 3. Today's Sales (Disallowed for mixer) -->
+        <!-- 3. Physical Check Queue -->
+        <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
+            <div class="flex items-center justify-between">
+                <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Physical Check
+                    Queue</span>
+            </div>
+            <p
+                class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $physicalCheckCount > 0 ? 'text-amber-600' : 'text-slate-900' }} text-right">
+                {{ $physicalCheckCount }}</p>
+            <p class="mt-1 text-[11px] text-slate-400 text-right">Products used in mixing</p>
+        </div>
+
+        @if (!auth()->user()?->hasRole('mixer'))
+            <!-- 4. Today's Sales (Disallowed for mixer) -->
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
                 <div class="flex items-center justify-between">
-                    <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Today's Sales</span>
-                    <span class="text-[10px] font-semibold uppercase text-emerald-700 tabular-nums">
-                        {{ $todayTransactionsCount }} txn(s)
-                    </span>
+                    <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Today's
+                        Sales</span>
                 </div>
-                <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light text-slate-900 text-right">{{ $currency::format($todaySalesTotal) }}</p>
+                <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light text-slate-900 text-right">
+                    {{ $currency::format($todaySalesTotal) }}</p>
                 <p class="mt-1 text-[11px] text-slate-400 text-right">Gross completed sales</p>
             </div>
         @endif
-
-        <!-- 4. Catalog SKUs -->
-        <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
-            <div class="flex items-center justify-between">
-                <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Catalog SKUs</span>
-                <a href="{{ route('products.index') }}" wire:navigate class="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-700 hover:bg-slate-50 shadow-xs transition">View All</a>
-            </div>
-            <p class="mt-3 tabular-nums text-3xl sm:text-4xl font-light text-slate-900 text-right">{{ $totalProducts }}</p>
-            <p class="mt-1 text-[11px] text-slate-400 text-right">Active stocked products</p>
-        </div>
     </div>
 
-    <!-- Low / Out of Stock Section (Moved above the graph) -->
-    <div class="space-y-3">
-        <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-                <h2 class="font-heading text-sm font-bold uppercase tracking-wider text-slate-800">Stock Alerts</h2>
-                <span class="font-mono text-xs text-slate-500">({{ $lowStockCount }} low, {{ $outOfStockCount }} out of stock)</span>
+    <!-- Low / Out of Stock Section (Stock Alerts) -->
+    <div class="space-y-2">
+        <div>
+            <h2 class="font-heading text-sm font-bold uppercase tracking-wider text-slate-800">Stock Alerts</h2>
+        </div>
+
+        <!-- Filter Controls Outside the Table Div (Aligned left with header, height same as table cell height h-9) -->
+        <div class="flex flex-wrap items-center gap-2.5">
+            <div class="w-64">
+                <input wire:model.live.debounce.300ms="lowStockSearch" type="search"
+                    placeholder="Search product name or SKU..."
+                    class="w-full h-9 rounded border border-slate-300 px-3 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+            </div>
+            <div class="w-40">
+                <select wire:model.live="lowStockStatus"
+                    class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="">All Statuses</option>
+                    <option value="low">Low Stock</option>
+                    <option value="out">Out of Stock</option>
+                </select>
+            </div>
+            <div class="w-44">
+                <select wire:model.live="lowStockBrand"
+                    class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="">All Brands</option>
+                    @foreach ($brands as $b)
+                        <option value="{{ $b->id }}">{{ $b->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="w-44">
+                <select wire:model.live="lowStockCategory"
+                    class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="">All Categories</option>
+                    @foreach ($categories as $c)
+                        <option value="{{ $c->id }}">{{ $c->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            @if ($lowStockSearch !== '' || $lowStockStatus !== '' || $lowStockBrand !== '' || $lowStockCategory !== '')
+                <button wire:click="resetLowStockFilters" type="button"
+                    class="h-9 px-2 text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium inline-flex items-center">
+                    Reset
+                </button>
+            @endif
+        </div>
+
+        <!-- Showing X of N Items Indicator (Left) & Customizable Amount Per Page (Right) -->
+        <div class="flex items-center justify-between text-xs text-slate-500">
+            <div>
+                @if ($lowStockProducts->total() > 0)
+                    Showing <span class="font-medium text-slate-700">{{ $lowStockProducts->firstItem() }}</span> to
+                    <span class="font-medium text-slate-700">{{ $lowStockProducts->lastItem() }}</span> of <span
+                        class="font-medium text-slate-700">{{ $lowStockProducts->total() }}</span> items
+                @else
+                    Showing <span class="font-medium text-slate-700">0</span> items
+                @endif
+            </div>
+            <div class="flex items-center gap-1.5">
+                <label for="lowStockPerPage" class="text-xs text-slate-500">Show:</label>
+                <select wire:model.live="perPage" id="lowStockPerPage"
+                    class="h-8 w-16 rounded border border-slate-300 bg-white pl-2.5 pr-7 py-1 text-xs text-slate-700 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                </select>
+                <span class="text-xs text-slate-500">items</span>
             </div>
         </div>
 
-        <!-- Table Container with Seamless Top Filters -->
+        <!-- Table Container (div contains ONLY table and bottom pagination) -->
         <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-            <!-- Horizontal Filter Bar Directly Above Table -->
-            <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2.5">
-                <div class="w-56">
-                    <input 
-                        wire:model.live.debounce.300ms="lowStockSearch" 
-                        type="search" 
-                        placeholder="Search product name or SKU..." 
-                        class="w-full rounded border border-slate-300 px-2.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
-                    />
-                </div>
-                <div class="w-40">
-                    <select wire:model.live="lowStockStatus" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
-                        <option value="">All Low &amp; Out</option>
-                        <option value="low">Low Stock Only</option>
-                        <option value="out">Out of Stock Only</option>
-                    </select>
-                </div>
-                <div class="w-40">
-                    <select wire:model.live="lowStockBrand" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
-                        <option value="">All Brands</option>
-                        @foreach ($brands as $b)
-                            <option value="{{ $b->id }}">{{ $b->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="w-40">
-                    <select wire:model.live="lowStockCategory" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
-                        <option value="">All Categories</option>
-                        @foreach ($categories as $c)
-                            <option value="{{ $c->id }}">{{ $c->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                @if ($lowStockSearch !== '' || $lowStockStatus !== '' || $lowStockBrand !== '' || $lowStockCategory !== '')
-                    <button 
-                        wire:click="resetLowStockFilters" 
-                        type="button" 
-                        class="text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium ml-auto"
-                    >
-                        Reset
-                    </button>
-                @endif
-            </div>
-
-            <!-- Table -->
             <div class="overflow-x-auto w-full">
                 <table class="w-full border-collapse border border-slate-300 text-xs">
-                    <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
+                    <thead
+                        class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                         <tr>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">SKU</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[200px]">Product Name</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-20 whitespace-nowrap">Unit</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">Brand</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-28 whitespace-nowrap">Current Stock</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">Threshold</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-28 whitespace-nowrap">Status</th>
-                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Actions</th>
+                            <th scope="col"
+                                class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">SKU</th>
+                            <th scope="col"
+                                class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">Brand
+                            </th>
+                            <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[200px]">
+                                Product Name</th>
+                            <th scope="col"
+                                class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">Category
+                            </th>
+                            <th scope="col"
+                                class="border border-slate-300 px-2.5 py-1.5 text-center w-20 whitespace-nowrap">Unit
+                            </th>
+                            <th scope="col"
+                                class="border border-slate-300 px-2.5 py-1.5 text-center w-28 whitespace-nowrap">Status
+                            </th>
+                            <th scope="col"
+                                class="border border-slate-300 px-2.5 py-1.5 text-right w-28 whitespace-nowrap">Current
+                                Stock</th>
+                            <th scope="col"
+                                class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">
+                                Threshold</th>
+                            <th scope="col"
+                                class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">Price
+                            </th>
+                            <th scope="col"
+                                class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Actions
+                            </th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200">
                         @forelse ($lowStockProducts as $product)
                             @php
-                                $qty = (float) ($product->inventory?->quantity ?? 0);
+                                $qty = (float) $product->inventories->sum('quantity');
                                 $threshold = (float) $product->low_stock_threshold;
                                 $isOut = $qty <= 0;
                             @endphp
-                            <tr 
-                                class="hover:bg-slate-50 transition-colors cursor-default" 
+                            <tr class="hover:bg-slate-50 transition-colors cursor-default"
                                 wire:key="dashboard-stock-{{ $product->id }}"
-                                @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $product->id }}, sku: '{{ $product->sku }}', name: '{{ addslashes($product->name) }}' })"
-                            >
-                                <td class="border border-slate-200 px-2.5 py-1.5 font-mono text-slate-700 whitespace-nowrap font-medium">{{ $product->sku }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 font-medium text-slate-900 break-words whitespace-normal" title="{{ $product->name }}">{{ $product->name }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-600 whitespace-nowrap font-medium">
-                                    {{ $product->packageUnit?->abbreviation ?? $product->packageUnit?->name ?? '—' }}
-                                </td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-left text-slate-600 whitespace-nowrap">
+                                @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $product->id }}, sku: '{{ $product->sku }}', name: '{{ addslashes($product->name) }}' })">
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 font-mono text-slate-700 whitespace-nowrap font-medium">
+                                    {{ $product->sku }}</td>
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 text-left text-slate-600 whitespace-nowrap">
                                     {{ $product->brand?->name ?? '—' }}
                                 </td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold whitespace-nowrap {{ $isOut ? 'text-rose-700' : 'text-amber-700' }}">
-                                    {{ number_format($qty, 2) }}
+                                <td class="border border-slate-200 px-2.5 py-1.5 font-medium text-slate-900 break-words whitespace-normal"
+                                    title="{{ $product->name }}">{{ $product->name }}</td>
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 text-left text-slate-600 whitespace-nowrap">
+                                    {{ $product->category?->name ?? '—' }}
                                 </td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-500 whitespace-nowrap">
-                                    {{ number_format($threshold, 2) }}
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-600 whitespace-nowrap font-medium">
+                                    {{ $product->packageUnit?->abbreviation ?? ($product->packageUnit?->name ?? '—') }}
                                 </td>
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
                                     @if ($isOut)
-                                         <span class="inline-flex items-center text-[10px] font-bold uppercase text-rose-700">
+                                        <span
+                                            class="inline-flex items-center text-[10px] font-bold uppercase text-rose-700">
                                             Out of Stock
                                         </span>
                                     @else
-                                        <span class="inline-flex items-center text-[10px] font-bold uppercase text-amber-700">
+                                        <span
+                                            class="inline-flex items-center text-[10px] font-bold uppercase text-amber-700">
                                             Low Stock
                                         </span>
                                     @endif
                                 </td>
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold whitespace-nowrap {{ $isOut ? 'text-rose-700' : 'text-amber-700' }}">
+                                    {{ number_format($qty, 2) }}
+                                </td>
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-500 whitespace-nowrap">
+                                    {{ number_format($threshold, 2) }}
+                                </td>
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">
+                                    {{ $currency::format($product->selling_price) }}
+                                </td>
                                 <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
-                                    <button 
+                                    <button
                                         @click.stop="contextMenu.openFromButton($event, { id: {{ $product->id }}, sku: '{{ $product->sku }}', name: '{{ addslashes($product->name) }}' })"
-                                        type="button" 
+                                        type="button"
                                         class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
-                                        title="Actions"
-                                    >
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none" />
-                                            <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-                                            <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none" />
+                                        title="Actions">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <circle cx="12" cy="5" r="1.5" fill="currentColor"
+                                                stroke="none" />
+                                            <circle cx="12" cy="12" r="1.5" fill="currentColor"
+                                                stroke="none" />
+                                            <circle cx="12" cy="19" r="1.5" fill="currentColor"
+                                                stroke="none" />
                                         </svg>
                                     </button>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
-                                    <span class="text-emerald-700 font-medium">&check; No low-stock or out-of-stock items detected matching the selected filters.</span>
+                                <td colspan="10"
+                                    class="border border-slate-200 px-4 py-8 text-center text-slate-500">
+                                    <span class="text-emerald-700 font-medium">&check; No low-stock or out-of-stock
+                                        items detected matching the selected filters.</span>
                                 </td>
                             </tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
+
+            <!-- Flush and Flat Pagination -->
             @if ($lowStockProducts->hasPages())
-                <div class="p-3 border-t border-slate-200 bg-slate-50">
-                    {{ $lowStockProducts->links() }}
+                <div
+                    class="px-3 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                    <div>
+                        <span class="text-slate-500">
+                            Page <span
+                                class="font-medium text-slate-800">{{ $lowStockProducts->currentPage() }}</span> of
+                            <span class="font-medium text-slate-800">{{ $lowStockProducts->lastPage() }}</span>
+                        </span>
+                    </div>
+                    <div class="inline-flex items-center gap-1">
+                        <button wire:click="previousPage" type="button" @disabled($lowStockProducts->onFirstPage())
+                            class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition">
+                            Prev
+                        </button>
+
+                        @php
+                            $currentPage = $lowStockProducts->currentPage();
+                            $lastPage = $lowStockProducts->lastPage();
+                            $startPage = max(1, $currentPage - 2);
+                            $endPage = min($lastPage, $currentPage + 2);
+                        @endphp
+
+                        @if ($startPage > 1)
+                            <button wire:click="gotoPage(1)" type="button"
+                                class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                1
+                            </button>
+                            @if ($startPage > 2)
+                                <span class="px-1 text-slate-400">...</span>
+                            @endif
+                        @endif
+
+                        @for ($page = $startPage; $page <= $endPage; $page++)
+                            @if ($page === $currentPage)
+                                <span
+                                    class="min-w-[28px] h-7 px-2 text-xs font-semibold rounded bg-slate-900 text-white flex items-center justify-center">
+                                    {{ $page }}
+                                </span>
+                            @else
+                                <button wire:click="gotoPage({{ $page }})" type="button"
+                                    class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                    {{ $page }}
+                                </button>
+                            @endif
+                        @endfor
+
+                        @if ($endPage < $lastPage)
+                            @if ($endPage < $lastPage - 1)
+                                <span class="px-1 text-slate-400">...</span>
+                            @endif
+                            <button wire:click="gotoPage({{ $lastPage }})" type="button"
+                                class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                {{ $lastPage }}
+                            </button>
+                        @endif
+
+                        <button wire:click="nextPage" type="button" @disabled(!$lowStockProducts->hasMorePages())
+                            class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition">
+                            Next
+                        </button>
+                    </div>
                 </div>
             @endif
         </div>
     </div>
 
-    <!-- 7-Day Sales Overview Section (Line graph with consistent header outside) -->
-    <div class="space-y-3">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div class="flex items-center gap-2">
-                <h2 class="font-heading text-sm font-bold uppercase tracking-wider text-slate-800">7-Day Sales Overview</h2>
-                <span class="font-mono text-xs text-slate-500">(Daily completed revenue trend)</span>
-            </div>
-            <div class="flex flex-wrap items-center gap-4 text-xs">
-                <div>
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">7-Day Total</span>
-                    <span class="font-semibold text-slate-900 tabular-nums">{{ $currency::format($sevenDaysTotal) }}</span>
-                </div>
-                <div class="border-l border-slate-200 pl-3">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Daily Average</span>
-                    <span class="font-semibold text-slate-900 tabular-nums">{{ $currency::format($sevenDaysAvg) }}</span>
-                </div>
-                <div class="border-l border-slate-200 pl-3">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Transactions</span>
-                    <span class="font-semibold text-slate-900 tabular-nums">{{ $sevenDaysTransactionsCount }} txns</span>
-                </div>
-            </div>
+    <!-- 7-Day Sales Overview Section -->
+    <div class="space-y-2.5">
+        <div class="flex items-center justify-between">
+            <h2 class="font-heading text-sm font-bold uppercase tracking-wider text-slate-800">7-Day Sales Overview
+            </h2>
         </div>
 
-        <!-- Graph Container -->
-        <div class="overflow-hidden rounded-lg border border-slate-300 bg-white p-4 sm:p-5 shadow-xs">
-            @php
-                $svgWidth = 700;
-                $svgHeight = 160;
-                $padX = 45;
-                $padYTop = 15;
-                $padYBottom = 25;
-                $chartW = $svgWidth - ($padX * 2);
-                $chartH = $svgHeight - $padYTop - $padYBottom;
-                $xStep = $chartW / 6;
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+            <!-- Left: Line Graph Card (lg:col-span-8) -->
+            <div
+                class="lg:col-span-8 rounded-lg border border-slate-300 bg-white p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+                @php
+                    $svgWidth = 700;
+                    $svgHeight = 160;
+                    $padLeft = 65;
+                    $padRight = 15;
+                    $padYTop = 14;
+                    $padYBottom = 22;
+                    $chartW = $svgWidth - $padLeft - $padRight;
+                    $chartH = $svgHeight - $padYTop - $padYBottom;
+                    $xStep = $chartW / 6;
 
-                $points = [];
-                foreach ($sevenDays as $idx => $day) {
-                    $x = $padX + ($idx * $xStep);
-                    $ratio = $maxSales > 0 ? ($day['total'] / $maxSales) : 0;
-                    $y = $padYTop + ($chartH * (1 - $ratio));
-                    $points[] = [
-                        'x' => round($x, 1),
-                        'y' => round($y, 1),
-                        'day' => $day,
-                    ];
-                }
+                    $points = [];
+                    foreach ($sevenDays as $idx => $day) {
+                        $x = $padLeft + $idx * $xStep;
+                        $ratio = $maxSales > 0 ? $day['total'] / $maxSales : 0;
+                        $y = $padYTop + $chartH * (1 - $ratio);
+                        $points[] = [
+                            'x' => round($x, 1),
+                            'y' => round($y, 1),
+                            'day' => $day,
+                        ];
+                    }
 
-                $linePath = 'M ' . implode(' L ', array_map(fn($p) => "{$p['x']},{$p['y']}", $points));
-                $areaPath = $linePath . " L {$points[6]['x']}," . ($svgHeight - $padYBottom) . " L {$points[0]['x']}," . ($svgHeight - $padYBottom) . ' Z';
-            @endphp
+                    $linePath = 'M ' . implode(' L ', array_map(fn($p) => "{$p['x']},{$p['y']}", $points));
+                    $areaPath =
+                        $linePath .
+                        " L {$points[6]['x']}," .
+                        ($svgHeight - $padYBottom) .
+                        " L {$points[0]['x']}," .
+                        ($svgHeight - $padYBottom) .
+                        ' Z';
+                @endphp
 
-            <!-- SVG Line Graph -->
-            <div class="w-full">
-                <svg viewBox="0 0 700 160" class="w-full h-36 sm:h-44 overflow-visible" preserveAspectRatio="none">
-                    <defs>
-                        <linearGradient id="salesLineGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stop-color="#00a3cc" stop-opacity="0.25" />
-                            <stop offset="100%" stop-color="#00a3cc" stop-opacity="0.01" />
-                        </linearGradient>
-                    </defs>
+                <!-- SVG Line Graph with Y-Axis Value Labels on Horizontal Lines (Expands to fill the card) -->
+                <div class="w-full flex-1 flex flex-col justify-center min-h-[200px] sm:min-h-[230px]">
+                    <svg viewBox="0 0 700 160" preserveAspectRatio="none"
+                        class="w-full h-48 sm:h-56 overflow-visible">
+                        <defs>
+                            <linearGradient id="salesLineGrad" x1="0" y1="0" x2="0"
+                                y2="1">
+                                <stop offset="0%" stop-color="#00a3cc" stop-opacity="0.25" />
+                                <stop offset="100%" stop-color="#00a3cc" stop-opacity="0.01" />
+                            </linearGradient>
+                        </defs>
 
-                    <!-- Horizontal Grid lines -->
-                    <line x1="{{ $padX }}" y1="{{ $padYTop }}" x2="{{ $svgWidth - $padX }}" y2="{{ $padYTop }}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3 3" />
-                    <line x1="{{ $padX }}" y1="{{ $padYTop + ($chartH / 2) }}" x2="{{ $svgWidth - $padX }}" y2="{{ $padYTop + ($chartH / 2) }}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3 3" />
-                    <line x1="{{ $padX }}" y1="{{ $svgHeight - $padYBottom }}" x2="{{ $svgWidth - $padX }}" y2="{{ $svgHeight - $padYBottom }}" stroke="#cbd5e1" stroke-width="1" />
+                        <!-- Y-Axis Value Labels & Horizontal Grid Lines -->
+                        <!-- Top Line (Max Sales) -->
+                        <text x="{{ $padLeft - 8 }}" y="{{ $padYTop + 3.5 }}" text-anchor="end"
+                            class="text-[10px] fill-slate-400 font-mono select-none">{{ $currency::format($maxSales) }}</text>
+                        <line x1="{{ $padLeft }}" y1="{{ $padYTop }}" x2="{{ $svgWidth - $padRight }}"
+                            y2="{{ $padYTop }}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3 3" />
 
-                    <!-- Area Fill & Stroke Path -->
-                    <path d="{{ $areaPath }}" fill="url(#salesLineGrad)" />
-                    <path d="{{ $linePath }}" fill="none" stroke="#00a3cc" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                        <!-- Mid Line (50% Sales) -->
+                        <text x="{{ $padLeft - 8 }}" y="{{ $padYTop + $chartH / 2 + 3.5 }}" text-anchor="end"
+                            class="text-[10px] fill-slate-400 font-mono select-none">{{ $currency::format($maxSales / 2) }}</text>
+                        <line x1="{{ $padLeft }}" y1="{{ $padYTop + $chartH / 2 }}"
+                            x2="{{ $svgWidth - $padRight }}" y2="{{ $padYTop + $chartH / 2 }}" stroke="#e2e8f0"
+                            stroke-width="1" stroke-dasharray="3 3" />
 
-                    <!-- Data Point Circles -->
-                    @foreach ($points as $p)
-                        <circle cx="{{ $p['x'] }}" cy="{{ $p['y'] }}" r="4" fill="#ffffff" stroke="#008fb3" stroke-width="2.5" />
+                        <!-- Baseline (₱0) -->
+                        <text x="{{ $padLeft - 8 }}" y="{{ $svgHeight - $padYBottom + 3.5 }}" text-anchor="end"
+                            class="text-[10px] fill-slate-400 font-mono select-none">₱0</text>
+                        <line x1="{{ $padLeft }}" y1="{{ $svgHeight - $padYBottom }}"
+                            x2="{{ $svgWidth - $padRight }}" y2="{{ $svgHeight - $padYBottom }}" stroke="#cbd5e1"
+                            stroke-width="1" />
+
+                        <!-- Area Fill & Stroke Path -->
+                        <path d="{{ $areaPath }}" fill="url(#salesLineGrad)" />
+                        <path d="{{ $linePath }}" fill="none" stroke="#00a3cc" stroke-width="2.5"
+                            stroke-linecap="round" stroke-linejoin="round" />
+
+                        <!-- Data Point Circles -->
+                        @foreach ($points as $p)
+                            <circle cx="{{ $p['x'] }}" cy="{{ $p['y'] }}" r="4" fill="#ffffff"
+                                stroke="#008fb3" stroke-width="2.5" />
+                        @endforeach
+                    </svg>
+                </div>
+
+                <!-- Prettified X-Axis Labels (Aligned beneath graph points) -->
+                <div class="grid grid-cols-7 gap-1 sm:gap-2 pt-2.5 border-t border-slate-100 mt-2 pl-12 sm:pl-14 pr-2">
+                    @foreach ($sevenDays as $day)
+                        <div
+                            class="flex flex-col items-center text-center group relative cursor-default py-1 px-0.5 rounded hover:bg-slate-50 transition">
+                            <span class="text-xs font-semibold text-slate-800 leading-tight">
+                                {{ $day['day'] }}
+                                <span
+                                    class="text-[10px] font-normal text-slate-400 block sm:inline">({{ $day['date'] }})</span>
+                            </span>
+                            <span class="text-xs font-semibold text-slate-700 tabular-nums mt-0.5 truncate max-w-full">
+                                {{ $day['total'] > 0 ? $currency::format($day['total']) : '₱0' }}
+                            </span>
+
+                            <!-- Hover Tooltip -->
+                            <div
+                                class="absolute bottom-full mb-2 hidden group-hover:block z-30 whitespace-nowrap rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white shadow-xl tabular-nums pointer-events-none">
+                                <p class="font-bold">{{ $day['full_day'] }}, {{ $day['date'] }}</p>
+                                <p class="text-slate-300">Revenue: {{ $currency::format($day['total']) }}</p>
+                                <p class="text-slate-400">{{ $day['count'] }} transaction(s)</p>
+                            </div>
+                        </div>
                     @endforeach
-                </svg>
+                </div>
             </div>
 
-            <!-- 7-Day Day & Value Column Labels Aligned Below -->
-            <div class="grid grid-cols-7 gap-1 sm:gap-2 pt-3 border-t border-slate-100">
-                @foreach ($sevenDays as $day)
-                    <div class="flex flex-col items-center text-center group relative cursor-default">
-                        <span class="text-[11px] font-semibold text-slate-800">{{ $day['day'] }}</span>
-                        <span class="text-[10px] text-slate-400 tabular-nums">{{ $day['date'] }}</span>
-                        <span class="text-[11px] font-semibold text-slate-700 tabular-nums mt-0.5 truncate max-w-full">
-                            {{ $day['total'] > 0 ? $currency::format($day['total']) : '₱0' }}
-                        </span>
-
-                        <!-- Hover Tooltip -->
-                        <div class="absolute bottom-full mb-2 hidden group-hover:block z-30 whitespace-nowrap rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white shadow-xl tabular-nums pointer-events-none">
-                            <p class="font-bold">{{ $day['full_day'] }}, {{ $day['date'] }}</p>
-                            <p class="text-slate-300">Revenue: {{ $currency::format($day['total']) }}</p>
-                            <p class="text-slate-400">{{ $day['count'] }} transaction(s)</p>
-                        </div>
+            <!-- Right: 3 Vertically Stacked Metric Cards (lg:col-span-4) -->
+            <div class="lg:col-span-4 flex flex-col justify-between gap-3 sm:gap-3.5">
+                <!-- Card 1: 7-Day Total Sales -->
+                <div
+                    class="flex-1 rounded-lg border border-slate-300 bg-white p-4 shadow-xs flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">7-Day
+                            Total Sales</span>
+                        <span class="text-[10px] font-semibold uppercase text-cyan-700">Past 7 Days</span>
                     </div>
-                @endforeach
+                    <div class="my-auto py-1">
+                        <p class="tabular-nums text-2xl sm:text-3xl font-light text-slate-900 text-right">
+                            {{ $currency::format($sevenDaysTotal) }}
+                        </p>
+                    </div>
+                    <p class="text-[11px] text-slate-400 text-right">Gross completed sales revenue</p>
+                </div>
+
+                <!-- Card 2: Daily Average -->
+                <div
+                    class="flex-1 rounded-lg border border-slate-300 bg-white p-4 shadow-xs flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Daily
+                            Average</span>
+                        <span class="text-[10px] font-semibold uppercase text-slate-500">Mean / Day</span>
+                    </div>
+                    <div class="my-auto py-1">
+                        <p class="tabular-nums text-2xl sm:text-3xl font-light text-slate-900 text-right">
+                            {{ $currency::format($sevenDaysAvg) }}
+                        </p>
+                    </div>
+                    <p class="text-[11px] text-slate-400 text-right">Average revenue per day</p>
+                </div>
+
+                <!-- Card 3: Total Transactions -->
+                <div
+                    class="flex-1 rounded-lg border border-slate-300 bg-white p-4 shadow-xs flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Total
+                            Transactions</span>
+                        <span class="text-[10px] font-semibold uppercase text-slate-500">Volume</span>
+                    </div>
+                    <div class="my-auto py-1">
+                        <p class="tabular-nums text-2xl sm:text-3xl font-light text-slate-900 text-right">
+                            {{ number_format($sevenDaysTransactionsCount) }}
+                        </p>
+                    </div>
+                    <p class="text-[11px] text-slate-400 text-right">Orders processed over 7 days</p>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Floating Context Menu -->
-    <div 
-        x-ref="floatingMenu"
-        x-show="contextMenu.open" 
-        x-cloak
-        x-transition:enter="transition ease-out duration-100"
-        x-transition:enter-start="opacity-0 scale-95"
-        x-transition:enter-end="opacity-100 scale-100"
-        x-transition:leave="transition ease-in duration-75"
-        x-transition:leave-start="opacity-100 scale-100"
+    <div x-ref="floatingMenu" x-show="contextMenu.open" x-cloak x-transition:enter="transition ease-out duration-100"
+        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+        x-transition:leave="transition ease-in duration-75" x-transition:leave-start="opacity-100 scale-100"
         x-transition:leave-end="opacity-0 scale-95"
         :style="`position: fixed; left: ${contextMenu.x}px; top: ${contextMenu.y}px; z-index: 9999;`"
         class="w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"
-        style="display: none;"
-    >
-        <a 
-            :href="contextMenu.item ? `{{ route('products.index') }}?search=${encodeURIComponent(contextMenu.item.sku)}` : '#'"
-            wire:navigate
-            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-        >
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-            <span>View in Catalog</span>
-        </a>
-        <a 
-            href="{{ route('inventory.stock-in') }}"
-            wire:navigate
-            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-        >
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            <span>Record Stock In</span>
-        </a>
-        <div class="my-1 border-t border-slate-100"></div>
-        <button 
+        style="display: none;">
+        <button
             @click="if (contextMenu.item) { navigator.clipboard.writeText(contextMenu.item.sku); $dispatch('toast', { type: 'success', message: 'SKU ' + contextMenu.item.sku + ' copied to clipboard.' }); contextMenu.close(); }"
-            type="button" 
-            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-        >
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+            type="button"
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+            </svg>
             <span>Copy SKU</span>
         </button>
     </div>

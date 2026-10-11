@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Inventory extends Model
 {
-    protected $fillable = ['product_id', 'quantity'];
+    protected $fillable = ['product_id', 'location', 'quantity'];
 
     protected function casts(): array
     {

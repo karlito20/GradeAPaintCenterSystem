@@ -14,8 +14,10 @@ class SaleReceiptController extends Controller
                 'user',
                 'items.product.packageUnit',
                 'items.product.brand',
+                'mixingTransaction.brand',
                 'mixingTransaction.priceBasisProduct',
                 'mixingTransaction.components.product.packageUnit',
+                'mixingTransaction.components.product.brand',
             ]),
         ]);
     }

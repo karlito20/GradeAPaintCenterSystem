@@ -7,20 +7,20 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MixingComponent extends Model
 {
-    protected $fillable = ['mixing_transaction_id', 'product_id', 'estimated_quantity', 'estimated_quantity_unit'];
+    protected $fillable = ['mixing_transaction_id', 'product_id', 'container_id'];
 
-    protected function casts(): array
+    public function product(): BelongsTo
     {
-        return ['estimated_quantity' => 'decimal:2'];
+        return $this->belongsTo(Product::class);
+    }
+
+    public function container(): BelongsTo
+    {
+        return $this->belongsTo(Container::class);
     }
 
     public function mixingTransaction(): BelongsTo
     {
         return $this->belongsTo(MixingTransaction::class);
-    }
-
-    public function product(): BelongsTo
-    {
-        return $this->belongsTo(Product::class);
     }
 }

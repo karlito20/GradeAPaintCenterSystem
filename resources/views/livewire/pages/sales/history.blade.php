@@ -1,8 +1,10 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\Sale;
 use App\Support\Currency;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -15,6 +17,9 @@ new #[Layout('layouts.app')] class extends Component {
     public string $viewScope = 'all'; // 'today' or 'all'
     public string $dateFrom = '';
     public string $dateTo = '';
+    public int $perPage = 20;
+
+
 
     public function mount(): void
     {
@@ -46,6 +51,11 @@ new #[Layout('layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    public function updatedPerPage(): void
+    {
+        $this->resetPage();
+    }
+
     public function setScope(string $scope): void
     {
         $this->viewScope = $scope;
@@ -65,6 +75,15 @@ new #[Layout('layouts.app')] class extends Component {
         $this->viewScope = 'all';
         $this->resetPage();
     }
+
+    public function proceedToCollectBalance(int $saleId): void
+    {
+        session([
+            'pos.collect_mix_sale_id' => $saleId,
+        ]);
+        $this->redirectRoute('sales.checkout');
+    }
+
 
     public function render(): mixed
     {
@@ -87,7 +106,7 @@ new #[Layout('layouts.app')] class extends Component {
             ->latest('sold_at');
 
         return view('livewire.pages.sales.history', [
-            'sales' => $query->paginate(20),
+            'sales' => $query->paginate($this->perPage),
             'todaySalesCount' => $todaySalesCount,
             'todaySalesSum' => $todaySalesSum,
             'currency' => Currency::class,
@@ -139,20 +158,14 @@ new #[Layout('layouts.app')] class extends Component {
     class="space-y-4 w-full min-w-0"
 >
     <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-300">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-300">
         <div>
-            <h1 class="font-heading text-xl font-bold tracking-tight text-slate-900">Sales History</h1>
+            <h1 class="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Sales History</h1>
         </div>
-        <div class="flex items-center gap-2">
-            <a href="{{ route('sales.index') }}" wire:navigate
-                class="inline-flex items-center gap-1.5 rounded bg-[#00a3cc] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[#008fb3] transition">
-                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                <span>POS Sale</span>
-            </a>
-        </div>
+        
     </div>
 
-    <!-- Today's Transaction Summary KPIs (Right-aligned numbers, bigger light font, neutral labels) -->
+    <!-- Today's Transaction Summary KPIs -->
     <div class="grid gap-3 sm:grid-cols-2">
         <div class="rounded-lg border border-slate-300 bg-white p-3.5 shadow-xs flex items-center justify-between">
             <div class="flex-1">
@@ -171,31 +184,31 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
     </div>
 
-    <!-- Table Container with Horizontal Filter Bar Directly Above Table (Matching Quotations Design) -->
-    <div class="rounded-lg border border-slate-300 bg-white shadow-xs overflow-hidden">
-        <!-- Horizontal Filter Bar -->
-        <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2.5">
+    <!-- Main Table Section with Standardized Space-y-2 Spacing -->
+    <div class="space-y-2">
+        <!-- Filter Controls Outside the Table Div (Aligned left, h-9 controls) -->
+        <div class="flex flex-wrap items-center gap-2.5">
             <!-- Search Keyword -->
-            <div class="flex-1 min-w-[200px]">
+            <div class="w-64">
                 <input wire:model.live.debounce.250ms="search" type="search" placeholder="Search invoice #, cashier, item..."
-                    class="w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                    class="w-full h-9 rounded border border-slate-300 px-3 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
             </div>
 
             <!-- Time Scope -->
-            <div class="inline-flex rounded border border-slate-300 p-0.5 bg-white">
+            <div class="inline-flex h-9 rounded border border-slate-300 p-0.5 bg-white items-center">
                 <button wire:click="setScope('today')" type="button"
-                    class="rounded px-2.5 py-1 text-xs font-medium transition {{ $viewScope === 'today' ? 'bg-[#00a3cc] text-white font-semibold shadow-xs' : 'text-slate-700 hover:text-slate-900' }}">
+                    class="h-full rounded px-2.5 text-xs font-medium transition {{ $viewScope === 'today' ? 'bg-[#00a3cc] text-white font-semibold shadow-xs' : 'text-slate-700 hover:text-slate-900' }}">
                     Today
                 </button>
                 <button wire:click="setScope('all')" type="button"
-                    class="rounded px-2.5 py-1 text-xs font-medium transition {{ $viewScope === 'all' ? 'bg-[#00a3cc] text-white font-semibold shadow-xs' : 'text-slate-700 hover:text-slate-900' }}">
+                    class="h-full rounded px-2.5 text-xs font-medium transition {{ $viewScope === 'all' ? 'bg-[#00a3cc] text-white font-semibold shadow-xs' : 'text-slate-700 hover:text-slate-900' }}">
                     All Time
                 </button>
             </div>
 
             <!-- Sale Type Filter -->
-            <div class="w-36">
-                <select wire:model.live="type" class="w-full rounded border-slate-300 px-2 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]">
+            <div class="w-40">
+                <select wire:model.live="type" class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="">All Types</option>
                     <option value="normal">Standard Packaged</option>
                     <option value="mixed">Custom Mix</option>
@@ -203,29 +216,56 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
 
             <!-- Date From -->
-            <div class="w-36">
+            <div class="flex items-center gap-1.5 text-xs text-slate-600">
+                <span class="font-semibold text-[11px] uppercase">From:</span>
                 <input wire:model.live="dateFrom" type="date" title="Sold From"
-                    class="w-full rounded border-slate-300 px-2 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                    class="h-9 rounded border border-slate-300 px-2.5 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
             </div>
 
             <!-- Date To -->
-            <div class="w-36">
+            <div class="flex items-center gap-1.5 text-xs text-slate-600">
+                <span class="font-semibold text-[11px] uppercase">To:</span>
                 <input wire:model.live="dateTo" type="date" title="Sold To"
-                    class="w-full rounded border-slate-300 px-2 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                    class="h-9 rounded border border-slate-300 px-2.5 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
             </div>
 
             <!-- Reset Button -->
             @if ($search !== '' || $type !== '' || $dateFrom !== '' || $dateTo !== '' || $viewScope !== 'all')
                 <button wire:click="resetFilters" type="button"
-                    class="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition">
+                    class="h-9 px-2 text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium inline-flex items-center">
                     Reset
                 </button>
             @endif
         </div>
 
-        <!-- Table -->
-        <div class="overflow-x-auto">
-            <table class="w-full border-collapse border border-slate-300 text-xs">
+        <!-- Showing X of N Items Indicator & Per Page Selector -->
+        <div class="flex items-center justify-between text-xs text-slate-500">
+            <div>
+                @if ($sales->total() > 0)
+                    Showing <span class="font-medium text-slate-700">{{ $sales->firstItem() }}</span> to
+                    <span class="font-medium text-slate-700">{{ $sales->lastItem() }}</span> of <span
+                        class="font-medium text-slate-700">{{ $sales->total() }}</span> items
+                @else
+                    Showing <span class="font-medium text-slate-700">0</span> items
+                @endif
+            </div>
+            <div class="flex items-center gap-1.5">
+                <label for="historyPerPage" class="text-xs text-slate-500">Show:</label>
+                <select wire:model.live="perPage" id="historyPerPage"
+                    class="h-8 w-16 rounded border border-slate-300 bg-white pl-2.5 pr-7 py-1 text-xs text-slate-700 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+                <span class="text-xs text-slate-500">items</span>
+            </div>
+        </div>
+
+        <!-- Table Container (div contains ONLY table and bottom pagination) -->
+        <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+            <div class="overflow-x-auto w-full">
+                <table class="w-full border-collapse border border-slate-300 text-xs">
                 <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                     <tr>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Invoice #</th>
@@ -234,11 +274,10 @@ new #[Layout('layouts.app')] class extends Component {
                         <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Cashier</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Type</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Items</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Status</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Subtotal</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Discount</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap font-bold text-slate-900">Total Due</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Tendered</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Change</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap w-16">Actions</th>
                     </tr>
                 </thead>
@@ -247,7 +286,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <tr 
                             class="hover:bg-slate-50 transition-colors cursor-default" 
                             wire:key="sale-row-{{ $sale->id }}"
-                            @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $sale->id }}, invoice: '{{ $sale->invoice_number }}', receiptUrl: '{{ route('sales.receipt', $sale) }}' })"
+                            @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $sale->id }}, invoice: '{{ $sale->invoice_number }}', receiptUrl: '{{ route('sales.receipt', $sale) }}', hasBalance: {{ $sale->balance_due > 0 ? 'true' : 'false' }} })"
                         >
                             <!-- Invoice # -->
                             <td class="border border-slate-200 px-2.5 py-1.5 font-mono font-medium text-slate-900 tabular-nums whitespace-nowrap">
@@ -271,10 +310,10 @@ new #[Layout('layouts.app')] class extends Component {
                                 {{ $sale->user?->name ?? 'Store Cashier' }}
                             </td>
 
-                            <!-- Sale Type (no border) -->
+                            <!-- Sale Type -->
                             <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
                                 @if ($sale->type === 'mixed')
-                                    <span class="text-purple-700 font-semibold text-xs">Custom Mix</span>
+                                    <span class="text-slate-700 font-medium text-xs">Custom Mix</span>
                                 @else
                                     <span class="text-slate-600 text-xs">Standard</span>
                                 @endif
@@ -285,6 +324,18 @@ new #[Layout('layouts.app')] class extends Component {
                                 {{ $sale->items->count() }}
                             </td>
 
+                            <!-- Payment Status -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                                @if ($sale->balance_due > 0)
+                                    <div class="leading-tight">
+                                        <span class="inline-block px-1.5 py-0.5 text-[12px] font-medium text-slate-700">Downpayment</span>
+                                        <span class="block text-[10px] font-medium text-slate-600 mt-0.5">Bal: {{ $currency::format($sale->balance_due) }}</span>
+                                    </div>
+                                @else
+                                    <span class="inline-block px-1.5 py-0.5 text-[12px] font-medium text-slate-700">Paid</span>
+                                @endif
+                            </td>
+
                             <!-- Subtotal -->
                             <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
                                 {{ $currency::format($sale->subtotal) }}
@@ -292,7 +343,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                             <!-- Discount -->
                             <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                @if ((float) $sale->discount_percentage > 0)
+                                @if ((float) $sale->discount_percentage > 0 || (float) $sale->discount_amount > 0)
                                     <span class="text-emerald-700 font-semibold" title="{{ number_format((float) $sale->discount_percentage, 2) }}%">
                                         -{{ $currency::format($sale->discount_amount) }}
                                     </span>
@@ -306,20 +357,10 @@ new #[Layout('layouts.app')] class extends Component {
                                 {{ $currency::format($sale->total) }}
                             </td>
 
-                            <!-- Tendered -->
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-600 whitespace-nowrap">
-                                {{ $currency::format($sale->payment_amount) }}
-                            </td>
-
-                            <!-- Change -->
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-600 whitespace-nowrap">
-                                {{ $currency::format($sale->change_amount) }}
-                            </td>
-
                             <!-- Actions -->
                             <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
                                 <button 
-                                    @click.stop="contextMenu.openFromButton($event, { id: {{ $sale->id }}, invoice: '{{ $sale->invoice_number }}', receiptUrl: '{{ route('sales.receipt', $sale) }}' })" 
+                                    @click.stop="contextMenu.openFromButton($event, { id: {{ $sale->id }}, invoice: '{{ $sale->invoice_number }}', receiptUrl: '{{ route('sales.receipt', $sale) }}', hasBalance: {{ $sale->balance_due > 0 ? 'true' : 'false' }} })" 
                                     type="button" 
                                     class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
                                     title="Actions"
@@ -334,7 +375,7 @@ new #[Layout('layouts.app')] class extends Component {
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="12" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
+                            <td colspan="11" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
                                 <p class="font-medium text-xs">No completed sales match the selected filters.</p>
                             </td>
                         </tr>
@@ -343,11 +384,69 @@ new #[Layout('layouts.app')] class extends Component {
             </table>
         </div>
 
-        @if ($sales->hasPages())
-            <div class="border-t border-slate-300 px-3 py-2 bg-slate-50">
-                {{ $sales->links() }}
-            </div>
-        @endif
+            @if ($sales->hasPages())
+                <div class="px-3 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                    <div>
+                        <span class="text-slate-500">
+                            Page <span class="font-medium text-slate-800">{{ $sales->currentPage() }}</span> of
+                            <span class="font-medium text-slate-800">{{ $sales->lastPage() }}</span>
+                        </span>
+                    </div>
+                    <div class="inline-flex items-center gap-1">
+                        <button wire:click="previousPage" type="button" @disabled($sales->onFirstPage())
+                            class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition">
+                            Prev
+                        </button>
+
+                        @php
+                            $currentPage = $sales->currentPage();
+                            $lastPage = $sales->lastPage();
+                            $startPage = max(1, $currentPage - 2);
+                            $endPage = min($lastPage, $currentPage + 2);
+                        @endphp
+
+                        @if ($startPage > 1)
+                            <button wire:click="gotoPage(1)" type="button"
+                                class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                1
+                            </button>
+                            @if ($startPage > 2)
+                                <span class="px-1 text-slate-400">...</span>
+                            @endif
+                        @endif
+
+                        @for ($page = $startPage; $page <= $endPage; $page++)
+                            @if ($page === $currentPage)
+                                <span
+                                    class="min-w-[28px] h-7 px-2 text-xs font-semibold rounded bg-slate-900 text-white flex items-center justify-center">
+                                    {{ $page }}
+                                </span>
+                            @else
+                                <button wire:click="gotoPage({{ $page }})" type="button"
+                                    class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                    {{ $page }}
+                                </button>
+                            @endif
+                        @endfor
+
+                        @if ($endPage < $lastPage)
+                            @if ($endPage < $lastPage - 1)
+                                <span class="px-1 text-slate-400">...</span>
+                            @endif
+                            <button wire:click="gotoPage({{ $lastPage }})" type="button"
+                                class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                {{ $lastPage }}
+                            </button>
+                        @endif
+
+                        <button wire:click="nextPage" type="button" @disabled(!$sales->hasMorePages())
+                            class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition">
+                            Next
+                        </button>
+                    </div>
+                </div>
+            @endif
+        </div>
     </div>
 
     <!-- Floating Context Menu -->
@@ -363,9 +462,22 @@ new #[Layout('layouts.app')] class extends Component {
         x-transition:leave-start="opacity-100 scale-100"
         x-transition:leave-end="opacity-0 scale-95"
         :style="`position: fixed; left: ${contextMenu.x}px; top: ${contextMenu.y}px; z-index: 9999;`"
-        class="w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"
+        class="w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"
         style="display: none;"
     >
+        <template x-if="contextMenu.item && contextMenu.item.hasBalance">
+            <div>
+                <button 
+                    type="button"
+                    @click="if (contextMenu.item) { $wire.proceedToCollectBalance(contextMenu.item.id); contextMenu.close(); }"
+                    class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                >
+                    <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>Pay Balance at POS Checkout</span>
+                </button>
+                <div class="my-1 border-t border-slate-100"></div>
+            </div>
+        </template>
         <button 
             type="button"
             @click="if (contextMenu.item) { const url = contextMenu.item.receiptUrl; contextMenu.close(); window.location.href = url; }"

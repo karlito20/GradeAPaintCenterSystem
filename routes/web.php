@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\InventoryReportController;
+use App\Http\Controllers\PurchaseOrderPdfController;
 use App\Http\Controllers\QuotationPrintController;
 use App\Http\Controllers\SaleReceiptController;
 use App\Http\Controllers\SalesReportPdfController;
@@ -15,19 +16,31 @@ Volt::route('/dashboard', 'pages.dashboard')
 
 // Sales Section
 Volt::route('/sales', 'pages.sales.index')
-    ->middleware(['auth', 'verified'])
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])
     ->name('sales.index');
 
 Volt::route('/products', 'pages.products.index')
     ->middleware(['auth', 'verified'])
     ->name('products.index');
 
+Volt::route('/products/purchase-orders', 'pages.products.purchase-orders')
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])
+    ->name('products.purchase-orders');
+
+Volt::route('/products/purchase-orders/create', 'pages.products.purchase-orders-create')
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])
+    ->name('products.purchase-orders.create');
+
+Route::get('/products/purchase-orders/{purchaseOrder}/pdf', PurchaseOrderPdfController::class)
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])
+    ->name('products.purchase-orders.pdf');
+
 Volt::route('/sales/history', 'pages.sales.history')
     ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])
     ->name('sales.history');
 
 Volt::route('/sales/checkout', 'pages.sales.checkout')
-    ->middleware(['auth', 'verified'])
+    ->middleware(['auth', 'verified', 'role:superadmin,admin,manager'])
     ->name('sales.checkout');
 
 Volt::route('/sales/quotations', 'pages.sales.quotations')
@@ -50,7 +63,11 @@ Route::get('/sales/{sale}/receipt', SaleReceiptController::class)
     ->middleware(['auth', 'verified'])
     ->name('sales.receipt');
 
-Route::redirect('/mixing', '/sales')
+Volt::route('/sales/custom-mixes', 'pages.sales.custom-mixes')
+    ->middleware(['auth', 'verified'])
+    ->name('sales.custom-mixes');
+
+Route::redirect('/mixing', '/sales/custom-mixes')
     ->middleware(['auth', 'verified'])
     ->name('mixing.index');
 
@@ -58,6 +75,12 @@ Route::redirect('/mixing', '/sales')
 Volt::route('/inventory/stock-in', 'pages.inventory.stock-in')
     ->middleware(['auth', 'verified'])
     ->name('inventory.stock-in');
+Route::redirect('/inventory/transfers', '/products')
+    ->name('inventory.transfers');
+
+Volt::route('/inventory/repack', 'pages.inventory.repack')
+    ->middleware(['auth', 'verified'])
+    ->name('inventory.repack');
 
 Volt::route('/inventory', 'pages.reports.inventory')
     ->middleware(['auth', 'verified'])

@@ -119,19 +119,39 @@ new class extends Component {
                 </p>
             @endif
 
-            <a href="{{ route('sales.index') }}" wire:navigate
-               aria-label="Point of Sale (POS)"
-               class="relative group flex w-full items-center {{ $collapsed ? 'justify-center px-2 py-2.5' : 'justify-start px-3 py-2.5 gap-3' }} rounded-md text-sm font-medium transition {{ request()->routeIs('sales.index') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900' }}">
-                <svg class="h-5 w-5 shrink-0 {{ request()->routeIs('sales.index') ? 'text-[#008fb3]' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+            @if (auth()->user()?->canAccessPos())
+                <a href="{{ route('sales.index') }}" wire:navigate
+                   aria-label="Point of Sale (POS)"
+                   class="relative group flex w-full items-center {{ $collapsed ? 'justify-center px-2 py-2.5' : 'justify-start px-3 py-2.5 gap-3' }} rounded-md text-sm font-medium transition {{ request()->routeIs('sales.index') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900' }}">
+                    <svg class="h-5 w-5 shrink-0 {{ request()->routeIs('sales.index') ? 'text-[#008fb3]' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    @if (!$collapsed)
+                        <span>Point of Sale (POS)</span>
+                    @else
+                        <div class="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2.5 z-50 hidden sm:flex items-center opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150 ease-out">
+                            <div class="relative px-2.5 py-1 text-xs font-semibold rounded-md shadow-lg bg-slate-900 text-white whitespace-nowrap">
+                                <div class="absolute -left-1 top-1/2 -translate-y-1/2 border-y-4 border-y-transparent border-r-4 border-r-slate-900"></div>
+                                Point of Sale (POS)
+                            </div>
+                        </div>
+                    @endif
+                </a>
+            @endif
+
+            <a href="{{ route('sales.custom-mixes') }}" wire:navigate
+               aria-label="Custom Mixes"
+               class="relative group flex w-full items-center {{ $collapsed ? 'justify-center px-2 py-2.5' : 'justify-start px-3 py-2.5 gap-3' }} rounded-md text-sm font-medium transition {{ request()->routeIs('sales.custom-mixes') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900' }}">
+                <svg class="h-5 w-5 shrink-0 {{ request()->routeIs('sales.custom-mixes') ? 'text-[#008fb3]' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                 </svg>
                 @if (!$collapsed)
-                    <span>Point of Sale (POS)</span>
+                    <span>Custom Mixes</span>
                 @else
                     <div class="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2.5 z-50 hidden sm:flex items-center opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150 ease-out">
                         <div class="relative px-2.5 py-1 text-xs font-semibold rounded-md shadow-lg bg-slate-900 text-white whitespace-nowrap">
                             <div class="absolute -left-1 top-1/2 -translate-y-1/2 border-y-4 border-y-transparent border-r-4 border-r-slate-900"></div>
-                            Point of Sale (POS)
+                            Custom Mixes
                         </div>
                     </div>
                 @endif
@@ -223,12 +243,23 @@ new class extends Component {
                     <div class="pl-4 space-y-0.5">
                         <a href="{{ route('products.index') }}" wire:navigate
                            title="All Products"
-                           class="flex w-full items-center justify-start px-3 py-2 gap-2.5 rounded-md text-sm font-medium transition {{ request()->routeIs('products.*') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }}">
-                            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('products.*') ? 'text-[#008fb3]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                           class="flex w-full items-center justify-start px-3 py-2 gap-2.5 rounded-md text-sm font-medium transition {{ request()->routeIs('products.index') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }}">
+                            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('products.index') ? 'text-[#008fb3]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                             </svg>
                             <span>All Products</span>
                         </a>
+
+                        @if (auth()->user()?->canManagePurchaseOrders())
+                        <a href="{{ route('products.purchase-orders') }}" wire:navigate
+                           title="Purchase Orders"
+                           class="flex w-full items-center justify-start px-3 py-2 gap-2.5 rounded-md text-sm font-medium transition {{ request()->routeIs('products.purchase-orders') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }}">
+                            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('products.purchase-orders') ? 'text-[#008fb3]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                            </svg>
+                            <span>Purchase Orders</span>
+                        </a>
+                        @endif
 
                         <a href="{{ route('inventory.stock-in') }}" wire:navigate
                            title="Stock In"
@@ -443,7 +474,10 @@ new class extends Component {
     <div class="{{ $open ? 'block' : 'hidden' }} border-t border-slate-200 bg-white sm:hidden px-4 py-3 space-y-2 text-sm">
         <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-1">Operations</p>
         <a href="{{ route('dashboard') }}" wire:navigate class="block px-3 py-2 rounded font-medium {{ request()->routeIs('dashboard') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100' }}">Dashboard</a>
-        <a href="{{ route('sales.index') }}" wire:navigate class="block px-3 py-2 rounded font-medium {{ request()->routeIs('sales.index') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100' }}">Point of Sale</a>
+        @if (auth()->user()?->canAccessPos())
+            <a href="{{ route('sales.index') }}" wire:navigate class="block px-3 py-2 rounded font-medium {{ request()->routeIs('sales.index') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100' }}">Point of Sale</a>
+        @endif
+        <a href="{{ route('sales.custom-mixes') }}" wire:navigate class="block px-3 py-2 rounded font-medium {{ request()->routeIs('sales.custom-mixes') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100' }}">Custom Mixes</a>
         @if (auth()->user()?->canViewQuotations())
             <a href="{{ route('sales.quotations') }}" wire:navigate class="block px-3 py-2 rounded font-medium {{ request()->routeIs('sales.quotations') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100' }}">Quotations</a>
         @endif
@@ -455,7 +489,10 @@ new class extends Component {
         @endif
 
         <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-1 pt-2">Inventory</p>
-        <a href="{{ route('products.index') }}" wire:navigate class="block px-3 py-2 rounded font-medium {{ request()->routeIs('products.*') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100' }}">Products</a>
+        <a href="{{ route('products.index') }}" wire:navigate class="block px-3 py-2 rounded font-medium {{ request()->routeIs('products.index') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100' }}">Products</a>
+        @if (auth()->user()?->canManagePurchaseOrders())
+            <a href="{{ route('products.purchase-orders') }}" wire:navigate class="block pl-8 px-3 py-2 rounded font-medium {{ request()->routeIs('products.purchase-orders') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100' }}">↳ Purchase Orders</a>
+        @endif
         <a href="{{ route('inventory.stock-in') }}" wire:navigate class="block pl-8 px-3 py-2 rounded font-medium {{ request()->routeIs('inventory.stock-in') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100' }}">↳ Stock In</a>
         <a href="{{ route('inventory.movements') }}" wire:navigate class="block pl-8 px-3 py-2 rounded font-medium {{ request()->routeIs('inventory.movements') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100' }}">↳ Movements</a>
         <a href="{{ route('inventory.physical-count') }}" wire:navigate class="block pl-8 px-3 py-2 rounded font-medium {{ request()->routeIs('inventory.physical-count') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100' }}">↳ Physical Count</a>

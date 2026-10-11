@@ -29,10 +29,6 @@ new #[Layout('layouts.app')] class extends Component {
         ]);
 
         $product = Product::with(['packageUnit', 'category'])->find($this->productId);
-        if (\App\Models\Category::where('is_for_mixing', true)->exists() && ! $product?->category?->is_for_mixing) {
-            $this->addError('productId', 'Only paints in designated mixing categories can be selected.');
-            return;
-        }
 
         $this->components[] = [
             'product_id' => (int) $validated['productId'],
@@ -62,20 +58,17 @@ new #[Layout('layouts.app')] class extends Component {
             $mix = MixingTransaction::create(['sale_id' => $sale->id, 'price_basis_product_id' => $basis->id, 'notes' => $this->notes ?: null]);
             foreach ($this->components as $component) {
                 $mix->components()->create(['product_id' => $component['product_id'], 'estimated_quantity' => $component['estimated_quantity'], 'estimated_quantity_unit' => $component['estimated_quantity_unit']]);
+                Product::where('id', $component['product_id'])->update(['requires_physical_check' => true]);
             }
             AuditLog::create(['user_id' => auth()->id(), 'event' => 'custom_mix_created', 'auditable_type' => MixingTransaction::class, 'auditable_id' => $mix->id, 'context' => ['components' => count($this->components)]]);
         });
         $this->reset(['components', 'notes', 'productId', 'estimatedQuantity', 'estimatedQuantityUnit']);
-        session()->flash('status', 'Custom mix sale recorded. Estimated usage is saved for weekly reconciliation.');
+        session()->flash('status', 'Custom mix sale recorded. Material products have been flagged for physical inventory check.');
     }
 
     public function render(): mixed
     {
-        $mixingCategoriesExist = \App\Models\Category::where('is_for_mixing', true)->exists();
         $productsQuery = Product::query()->where('active', true);
-        if ($mixingCategoriesExist) {
-            $productsQuery->whereHas('category', fn ($q) => $q->where('is_for_mixing', true));
-        }
 
         return view('livewire.pages.mixing.index', [
             'products' => $productsQuery->orderBy('name')->get(),
@@ -88,13 +81,14 @@ new #[Layout('layouts.app')] class extends Component {
         <div class="rounded border border-emerald-300 bg-emerald-50 p-3 text-xs font-medium text-emerald-800 shadow-xs">{{ session('status') }}</div>
     @endif
 
-    <div>
+    <div class="border-b border-slate-300 pb-3">
         <div class="flex items-center gap-2">
             <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Operations</span>
             <span class="text-xs text-slate-300">/</span>
             <span class="text-xs font-semibold uppercase tracking-wider text-slate-700">Paint Center</span>
         </div>
-        <h1 class="font-heading text-2xl font-bold tracking-tight text-slate-900">Custom Paint Mixing</h1>
+        <h1 class="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Custom Paint Mixing</h1>
+        <p class="text-[11px] text-slate-500 mt-0.5">Ingredients used in mixing will be automatically marked for physical inventory verification.</p>
     </div>
 
     <div class="space-y-4 rounded-lg border border-slate-300 bg-white p-5 shadow-xs">

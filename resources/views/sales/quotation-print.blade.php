@@ -65,16 +65,11 @@
                     <h1 class="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-900 font-heading">
                         Grade A Paint Center
                     </h1>
-                    <p class="text-xs font-medium text-slate-600 mt-0.5">Retail Paint, Tinting &amp; Painting Supplies</p>
-                    <p class="text-[11px] text-slate-500">Lapu-Lapu St., Agdao, Davao City</p>
-                    <p class="text-[11px] text-slate-500">Contact: (082) 227-1234 · info@gradeapaint.com</p>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Lapu-Lapu St., Agdao, Davao City</p>
                 </div>
                 <div class="sm:text-right">
-                    <span class="inline-block rounded bg-sky-50 border border-sky-200 text-[#008fb3] font-bold text-xs uppercase px-2.5 py-1 tracking-wider mb-1.5">
-                        Price Quotation
-                    </span>
                     <p class="font-mono text-sm font-bold text-slate-900">{{ $quotation->quote_number }}</p>
-                    <p class="text-[11px] text-slate-500">Date Issued: <strong class="text-slate-800">{{ $quotation->created_at->format('F d, Y') }}</strong></p>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Date Issued: <strong class="text-slate-800">{{ $quotation->created_at->format('F d, Y') }}</strong></p>
                     @if ($quotation->valid_until)
                         <p class="text-[11px] text-slate-500">Valid Until: <strong class="text-slate-800">{{ $quotation->valid_until->format('F d, Y') }}</strong></p>
                     @endif
@@ -92,17 +87,7 @@
                 </div>
                 <div class="text-right">
                     <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Quotation Status:</span>
-                    @php
-                        $statusBadge = match($quotation->status) {
-                            'draft' => 'bg-slate-100 text-slate-700 border-slate-300',
-                            'sent' => 'bg-sky-50 text-sky-800 border-sky-300',
-                            'accepted' => 'bg-emerald-50 text-emerald-800 border-emerald-300',
-                            'expired' => 'bg-amber-50 text-amber-800 border-amber-300',
-                            'cancelled' => 'bg-rose-50 text-rose-800 border-rose-300',
-                            default => 'bg-slate-100 text-slate-700 border-slate-300',
-                        };
-                    @endphp
-                    <span class="inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded border {{ $statusBadge }}">
+                    <span class="text-xs font-semibold uppercase text-slate-800">
                         {{ $quotation->status }}
                     </span>
                     <p class="text-slate-600 mt-1">Prepared By: <strong class="text-slate-800">{{ $quotation->user?->name ?? 'Sales Representative' }}</strong></p>
@@ -114,10 +99,10 @@
                 <table class="w-full border-collapse border border-slate-300 text-xs">
                     <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                         <tr>
-                            <th class="border border-slate-300 px-3 py-2 text-left w-12 text-center">#</th>
-                            <th class="border border-slate-300 px-3 py-2 text-left w-24">SKU</th>
-                            <th class="border border-slate-300 px-3 py-2 text-left">Description / Specification</th>
-                            <th class="border border-slate-300 px-3 py-2 text-left w-24">Unit / Spec</th>
+                            <th class="border border-slate-300 px-3 py-2 text-center w-8">#</th>
+                            <th class="border border-slate-300 px-3 py-2 text-left w-28">SKU</th>
+                            <th class="border border-slate-300 px-3 py-2 text-left">Description</th>
+                            <th class="border border-slate-300 px-3 py-2 text-center w-20">Unit</th>
                             <th class="border border-slate-300 px-3 py-2 text-right w-16">Qty</th>
                             <th class="border border-slate-300 px-3 py-2 text-right w-24">Unit Price</th>
                             <th class="border border-slate-300 px-3 py-2 text-right w-28">Amount</th>
@@ -135,10 +120,10 @@
                                 <td class="border border-slate-200 px-3 py-2">
                                     <div class="font-semibold text-slate-900">{{ $item->description }}</div>
                                     @if ($item->mix_data)
-                                        <div class="text-[10px] text-purple-700 mt-0.5">Special paint tint &amp; formula mix</div>
+                                        <div class="text-[10px] text-slate-500 mt-0.5">Special paint tint &amp; formula mix</div>
                                     @endif
                                 </td>
-                                <td class="border border-slate-200 px-3 py-2 text-slate-600">
+                                <td class="border border-slate-200 px-3 py-2 text-center text-slate-600">
                                     {{ $item->package ?? ($item->product?->formattedPackage() ?? $item->product?->packageUnit?->abbreviation ?? '—') }}
                                 </td>
                                 <td class="border border-slate-200 px-3 py-2 text-right tabular-nums text-slate-900 font-medium">
@@ -158,22 +143,14 @@
 
             <!-- Financial Summary Box -->
             <div class="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
-                <!-- Notes & Terms -->
+                <!-- Notes & Remarks -->
                 <div class="flex-1 w-full sm:max-w-md">
                     @if ($quotation->notes)
-                        <div class="rounded border border-slate-200 bg-slate-50 p-3 text-xs mb-3">
+                        <div class="rounded border border-slate-200 bg-slate-50 p-3 text-xs">
                             <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-0.5">Special Notes / Remarks:</span>
                             <p class="text-slate-700 whitespace-pre-line">{{ $quotation->notes }}</p>
                         </div>
                     @endif
-
-                    <div class="text-[10px] text-slate-500 space-y-1">
-                        <p class="font-semibold text-slate-600 uppercase tracking-wider">Terms &amp; Conditions:</p>
-                        <p>1. Prices quoted are valid until {{ $quotation->valid_until ? $quotation->valid_until->format('F d, Y') : 'the specified validity date' }}.</p>
-                        <p>2. Payment terms: Cash, check, or approved store terms upon delivery/pickup.</p>
-                        <p>3. Custom color tint mixes and special order items are non-refundable once mixed.</p>
-                        <p>4. Goods remain property of Grade A Paint Center until full settlement.</p>
-                    </div>
                 </div>
 
                 <!-- Financial Calculation -->
@@ -185,7 +162,7 @@
 
                     @if ((float) $quotation->discount_percentage > 0)
                         <div class="flex justify-between text-emerald-700 font-semibold">
-                            <span>Discount ({{ number_format((float) $quotation->discount_percentage, 2) }}%{{ $quotation->discount_type && $quotation->discount_type !== 'none' ? ' · ' . ucfirst(str_replace('_', ' ', $quotation->discount_type)) : '' }}):</span>
+                            <span>Discount ({{ number_format((float) $quotation->discount_percentage, 2) }}%{{ $quotation->discount_type && $quotation->discount_type !== 'none' ? ' - ' . ucfirst(str_replace('_', ' ', $quotation->discount_type)) : '' }}):</span>
                             <span class="tabular-nums">-{{ \App\Support\Currency::format($quotation->discount_amount) }}</span>
                         </div>
                         @if ($quotation->discount_reason)
@@ -227,11 +204,6 @@
                         <p class="text-[10px] text-slate-400 mt-1">Date Signed: <span class="font-mono">____________________</span></p>
                     </div>
                 </div>
-            </div>
-
-            <!-- Document Footer Note -->
-            <div class="mt-8 pt-3 border-t border-slate-200 text-center text-[10px] text-slate-400">
-                Grade A Paint Center — Official Price Quotation Document — Lapu-Lapu St., Agdao, Davao City
             </div>
         </div>
     </div>

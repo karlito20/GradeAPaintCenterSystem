@@ -44,6 +44,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $historySearch = '';
     public string $historyDateFrom = '';
     public string $historyDateTo = '';
+    public int $historyPerPage = 15;
     public ?int $viewingStockInId = null;
 
     public function mount(): void
@@ -130,12 +131,14 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->validate([
             'receivedAt' => ['required', 'date'],
-            'reference' => ['nullable', 'string', 'max:100'],
+            'reference' => ['required', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:500'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'exists:products,id'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.unit_cost' => ['nullable', 'numeric', 'min:0'],
+        ], [
+            'reference.required' => 'The DR number is required.',
         ]);
 
         DB::transaction(function (): void {
@@ -147,15 +150,22 @@ new #[Layout('layouts.app')] class extends Component {
             ]);
 
             $totalQuantity = 0;
+            $inventoryService = app(\App\Services\InventoryService::class);
+
             foreach ($this->items as $item) {
                 $qty = (float) $item['quantity'];
                 $totalQuantity += $qty;
                 $cost = isset($item['unit_cost']) && $item['unit_cost'] !== '' ? (float) $item['unit_cost'] : 0.00;
 
+                $product = Product::with('category')->find($item['product_id']);
+                $isPaint = $product && $product->category && stripos($product->category->name, 'paint') !== false;
+
+                // Inventory updates via Service
                 $inventory = Inventory::query()
                     ->where('product_id', $item['product_id'])
+                    ->where('location', 'storage')
                     ->lockForUpdate()
-                    ->firstOrCreate(['product_id' => $item['product_id']], ['quantity' => 0]);
+                    ->firstOrCreate(['product_id' => $item['product_id'], 'location' => 'storage'], ['quantity' => 0]);
 
                 $before = (float) $inventory->quantity;
                 $after = $before + $qty;
@@ -176,6 +186,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                 InventoryMovement::create([
                     'product_id' => $item['product_id'],
+                    'location' => 'storage',
                     'user_id' => auth()->id(),
                     'type' => 'stock_in',
                     'quantity_change' => $qty,
@@ -223,6 +234,26 @@ new #[Layout('layouts.app')] class extends Component {
         $this->viewingStockInId = null;
     }
 
+    public function updatedHistorySearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedHistoryDateFrom(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedHistoryDateTo(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedHistoryPerPage(): void
+    {
+        $this->resetPage();
+    }
+
     public function resetHistoryFilters(): void
     {
         $this->historySearch = '';
@@ -234,7 +265,7 @@ new #[Layout('layouts.app')] class extends Component {
     public function render(): mixed
     {
         $products = Product::query()
-            ->with(['brand', 'packageUnit', 'inventory', 'category'])
+            ->with(['brand', 'packageUnit', 'inventories', 'category'])
             ->where('active', true)
             ->orderBy('name')
             ->get();
@@ -256,7 +287,7 @@ new #[Layout('layouts.app')] class extends Component {
         $pickerProducts = collect();
         if ($this->showProductPickerModal) {
             $pickerProducts = Product::query()
-                ->with(['brand', 'packageUnit', 'inventory', 'category'])
+                ->with(['brand', 'packageUnit', 'inventories', 'category'])
                 ->where('active', true)
                 ->when($this->pickerSearch !== '', function ($q) {
                     $t = '%'.trim($this->pickerSearch).'%';
@@ -289,7 +320,7 @@ new #[Layout('layouts.app')] class extends Component {
             ->latest('received_at')
             ->latest('id');
 
-        $stockInHistory = $this->activeTab === 'history' ? $historyQuery->paginate(15) : null;
+        $stockInHistory = $this->activeTab === 'history' ? $historyQuery->paginate($this->historyPerPage) : null;
         $viewingStockIn = $this->viewingStockInId ? StockIn::with(['user', 'items.product.packageUnit', 'items.product.brand'])->find($this->viewingStockInId) : null;
 
         return view('livewire.pages.inventory.stock-in', [
@@ -351,7 +382,7 @@ new #[Layout('layouts.app')] class extends Component {
     <!-- Header (No Quick Shortcuts) -->
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pb-2.5 border-b border-slate-300">
         <div>
-            <h1 class="font-heading text-xl font-bold tracking-tight text-slate-900">Stock In</h1>
+            <h1 class="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Stock In</h1>
         </div>
     </div>
 
@@ -392,15 +423,14 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="space-y-4">
                 <!-- Batch Info Card (with Reference) -->
                 <div class="rounded-lg border border-slate-300 bg-white p-4 shadow-xs space-y-3">
-                    <h2 class="font-heading text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5 border-b border-slate-200 pb-2">
-                        <svg class="h-3.5 w-3.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
+                    <h2 class="font-heading text-xs font-bold uppercase tracking-wider text-slate-800 border-b border-slate-200 pb-2">
                         1. Batch Info &amp; Reference
                     </h2>
 
                     <div>
-                        <x-input-label for="receivedAt" value="Received Date" class="text-xs font-semibold text-slate-700 uppercase tracking-wider" />
+                        <label for="receivedAt" class="text-xs font-semibold text-slate-700 uppercase tracking-wider block">
+                            Received Date <span class="text-rose-500">*</span>
+                        </label>
                         <x-text-input 
                             wire:model="receivedAt" 
                             id="receivedAt" 
@@ -412,25 +442,26 @@ new #[Layout('layouts.app')] class extends Component {
                     </div>
 
                     <div>
-                        <x-input-label for="reference" value="Reference / PO / DR #" class="text-xs font-semibold text-slate-700 uppercase tracking-wider" />
+                        <label for="reference" class="text-xs font-semibold text-slate-700 uppercase tracking-wider block">
+                            DR Number <span class="text-rose-500">*</span>
+                        </label>
                         <x-text-input 
                             wire:model="reference" 
                             id="reference" 
                             type="text" 
-                            placeholder="e.g. PO-2026-0045, DR-88912" 
                             class="mt-1 block w-full rounded border-slate-300 text-xs text-slate-900 focus:border-slate-500 focus:ring-0" 
+                            placeholder="e.g. DR-10492"
+                            required
                         />
-                        <p class="text-[10px] text-slate-400 mt-0.5">Supplier invoice, delivery receipt, or purchase order reference.</p>
                         <x-input-error :messages="$errors->get('reference')" class="mt-1" />
                     </div>
 
                     <div>
-                        <x-input-label for="notes" value="Notes / Remarks (Optional)" class="text-xs font-semibold text-slate-700 uppercase tracking-wider" />
+                        <x-input-label for="notes" value="Notes / Remarks" class="text-xs font-semibold text-slate-700 uppercase tracking-wider" />
                         <textarea 
                             wire:model="notes" 
                             id="notes" 
                             rows="2" 
-                            placeholder="e.g. Delivered via forwarder truck, all cans inspected..." 
                             class="mt-1 block w-full rounded border-slate-300 text-xs text-slate-900 focus:border-slate-500 focus:ring-0"
                         ></textarea>
                         <x-input-error :messages="$errors->get('notes')" class="mt-1" />
@@ -439,10 +470,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                 <!-- Add Item Form Card (Reworked Product Selection) -->
                 <div class="rounded-lg border border-slate-300 bg-white p-4 shadow-xs space-y-3">
-                    <h2 class="font-heading text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5 border-b border-slate-200 pb-2">
-                        <svg class="h-3.5 w-3.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                        </svg>
+                    <h2 class="font-heading text-xs font-bold uppercase tracking-wider text-slate-800 border-b border-slate-200 pb-2">
                         2. Add Product to Batch
                     </h2>
 
@@ -458,27 +486,26 @@ new #[Layout('layouts.app')] class extends Component {
                         </div>
 
                         @if ($selectedProduct)
-                            <!-- Selected Product Badge Card -->
-                            <div class="rounded-lg border border-cyan-300 bg-cyan-50/70 p-3 text-xs space-y-1.5">
-                                <div class="flex items-start justify-between gap-2">
-                                    <div>
-                                        <span class="font-bold text-slate-900 text-xs block leading-snug">{{ $selectedProduct->name }}</span>
-                                        <div class="text-[11px] text-slate-600 mt-0.5 space-x-1.5">
-                                            <span class="font-mono font-semibold text-slate-800">SKU: {{ $selectedProduct->sku }}</span>
-                                            <span>·</span>
+                            <!-- Selected Product Info Panel (Clean & Uncluttered) -->
+                            <div class="rounded-lg border border-slate-300 bg-white p-3 text-xs space-y-2 shadow-xs">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <span class="font-bold text-slate-900 text-xs block leading-snug truncate">{{ $selectedProduct->name }}</span>
+                                        <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600 mt-1">
+                                            <span class="font-mono font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{{ $selectedProduct->sku }}</span>
                                             <span>{{ $selectedProduct->brand?->name ?? 'No Brand' }}</span>
-                                            <span>·</span>
+                                            <span class="text-slate-300">·</span>
                                             <span>{{ $selectedProduct->category?->name ?? '—' }}</span>
                                         </div>
                                     </div>
-                                    <button wire:click="$set('productId', '')" type="button" class="text-xs text-slate-400 hover:text-rose-600 font-bold shrink-0">
-                                        ✕ Change
+                                    <button wire:click="$set('productId', '')" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-800 hover:underline shrink-0">
+                                        Change
                                     </button>
                                 </div>
-                                <div class="flex items-center justify-between border-t border-cyan-200/80 pt-1.5 text-[11px]">
+                                <div class="flex items-center justify-between border-t border-slate-100 pt-2 text-[11px]">
                                     <span class="text-slate-500">Current Stock:</span>
                                     <span class="font-bold tabular-nums text-slate-900">
-                                        {{ number_format((float) ($selectedProduct->inventory?->quantity ?? 0), 2) }} {{ $selectedProduct->packageUnit?->abbreviation ?? 'pcs' }}
+                                        {{ number_format((float) ($selectedProduct->inventories->sum('quantity') ?? 0), 2) }} {{ $selectedProduct->packageUnit?->abbreviation ?? 'pcs' }}
                                     </span>
                                 </div>
                             </div>
@@ -518,7 +545,7 @@ new #[Layout('layouts.app')] class extends Component {
                                                     </div>
                                                 </div>
                                                 <div class="text-right shrink-0">
-                                                    <span class="tabular-nums font-semibold text-slate-700">{{ number_format((float) ($result->inventory?->quantity ?? 0), 2) }}</span>
+                                                    <span class="tabular-nums font-semibold text-slate-700">{{ number_format((float) ($result->inventories->sum('quantity') ?? 0), 2) }}</span>
                                                     <span class="text-[10px] text-slate-400 block">{{ $result->packageUnit?->abbreviation ?? 'pcs' }}</span>
                                                 </div>
                                             </button>
@@ -536,7 +563,9 @@ new #[Layout('layouts.app')] class extends Component {
 
                     <!-- Quantity to Receive -->
                     <div>
-                        <x-input-label for="quantity" value="Received Quantity (Cans / Units)" class="text-xs font-semibold text-slate-700 uppercase tracking-wider" />
+                        <label for="quantity" class="text-xs font-semibold text-slate-700 uppercase tracking-wider block">
+                            Received Quantity<span class="text-rose-500">*</span>
+                        </label>
                         <div class="relative mt-1">
                             <x-text-input 
                                 wire:model="quantity" 
@@ -578,7 +607,6 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class="border-b border-slate-300 bg-slate-100 p-3 sm:flex sm:items-center sm:justify-between">
                             <div>
                                 <h2 class="font-heading text-xs font-bold uppercase tracking-wider text-slate-800">3. Staged Items for Receiving</h2>
-                                <p class="text-[11px] text-slate-500">Review line items below before committing to inventory balance.</p>
                             </div>
                             @if (count($items) > 0)
                                 <button 
@@ -597,11 +625,11 @@ new #[Layout('layouts.app')] class extends Component {
                                 <thead>
                                     <tr class="border-b border-slate-300 bg-slate-100 text-left font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
                                         <th class="border border-slate-300 px-2.5 py-1.5 w-28 whitespace-nowrap">SKU</th>
+                                        <th class="border border-slate-300 px-2.5 py-1.5 w-28 whitespace-nowrap">Brand</th>
                                         <th class="border border-slate-300 px-2.5 py-1.5">Product Name</th>
                                         <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Unit</th>
-                                        <th class="border border-slate-300 px-2.5 py-1.5 w-28 whitespace-nowrap">Brand</th>
                                         <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">Current Stock</th>
-                                        <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap text-emerald-800">+ Receiving</th>
+                                        <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap ">Receiving</th>
                                         <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap font-bold text-slate-900">Projected</th>
                                         <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Action</th>
                                     </tr>
@@ -613,7 +641,7 @@ new #[Layout('layouts.app')] class extends Component {
                                     @forelse ($items as $index => $item)
                                         @php
                                              $prod = $products->firstWhere('id', $item['product_id']);
-                                             $currentQty = (float) ($prod?->inventory?->quantity ?? 0);
+                                             $currentQty = (float) ($prod?->inventories->sum('quantity') ?? 0);
                                              $addQty = (float) $item['quantity'];
                                              $projectedQty = $currentQty + $addQty;
                                              $batchTotalQty += $addQty;
@@ -622,14 +650,14 @@ new #[Layout('layouts.app')] class extends Component {
                                             <td class="border border-slate-200 px-2.5 py-1.5 font-mono text-slate-700 whitespace-nowrap">
                                                 {{ $prod?->sku ?? '—' }}
                                             </td>
+                                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
+                                                {{ $prod?->brand?->name ?? 'No Brand' }}
+                                            </td>
                                             <td class="border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-900 break-words whitespace-normal" title="{{ $prod?->name }}">
                                                 {{ $prod?->name ?? 'Unknown Product' }}
                                             </td>
                                             <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-600 whitespace-nowrap">
                                                 {{ $prod?->packageUnit?->abbreviation ?? 'pcs' }}
-                                            </td>
-                                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
-                                                {{ $prod?->brand?->name ?? 'No Brand' }}
                                             </td>
                                             <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-500 whitespace-nowrap">
                                                 {{ number_format($currentQty, 2) }}
@@ -699,171 +727,276 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </div>
     @else
-        <!-- History Tab (Unified Card, Filters On Top, Dashboard Table Design, No # on IDs) -->
-        <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-            <!-- Horizontal Filter Bar Directly Above Table -->
-            <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2.5">
-                <div class="flex-1 min-w-[200px]">
+        <!-- History Tab (Unified Card with Standardized Space-y-2 Spacing) -->
+        <div class="space-y-2">
+            <!-- Filter Controls Outside the Table Div (Aligned left, h-9 controls) -->
+            <div class="flex flex-wrap items-center gap-2.5">
+                <div class="w-64">
                     <input 
                         wire:model.live.debounce.300ms="historySearch"
                         type="search" 
-                        placeholder="Search reference, notes, staff, SKU..." 
-                        class="w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]"
+                        placeholder="Search DR number, notes, staff, SKU..." 
+                        class="w-full h-9 rounded border border-slate-300 px-3 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
                     />
                 </div>
                 <div class="flex items-center gap-1.5 text-xs text-slate-600">
-                    <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">From:</span>
+                    <span class="font-semibold text-[11px] uppercase">From:</span>
                     <input 
                         wire:model.live="historyDateFrom" 
                         type="date" 
-                        class="rounded border-slate-300 px-2 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" 
+                        title="From Date"
+                        class="h-9 rounded border border-slate-300 px-2.5 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" 
                     />
                 </div>
                 <div class="flex items-center gap-1.5 text-xs text-slate-600">
-                    <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">To:</span>
+                    <span class="font-semibold text-[11px] uppercase">To:</span>
                     <input 
                         wire:model.live="historyDateTo" 
                         type="date" 
-                        class="rounded border-slate-300 px-2 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" 
+                        title="To Date"
+                        class="h-9 rounded border border-slate-300 px-2.5 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" 
                     />
                 </div>
                 @if ($historySearch !== '' || $historyDateFrom !== '' || $historyDateTo !== '')
                     <button 
                         wire:click="resetHistoryFilters" 
                         type="button" 
-                        class="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition"
+                        class="h-9 px-2 text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium inline-flex items-center"
                     >
                         Reset
                     </button>
                 @endif
             </div>
 
-            <!-- History Table Area -->
-            <div class="overflow-x-auto w-full">
-                <table class="w-full border-collapse border border-slate-300 text-xs">
-                    <thead>
-                        <tr class="border-b border-slate-300 bg-slate-100 text-left font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16">ID</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-36">Reference</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Received Date</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-36">Received By</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-20">Items</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-right w-28">Total Quantity</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-left">Notes</th>
-                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200">
-                        @forelse ($stockInHistory as $stockIn)
-                            @php
-                                $totalBatchQty = $stockIn->items->sum('quantity');
-                            @endphp
-                            <tr 
-                                @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $stockIn->id }}, reference: '{{ addslashes($stockIn->reference ?? '') }}' })"
-                                class="hover:bg-slate-50 transition-colors cursor-default" 
-                                wire:key="stock-in-history-{{ $stockIn->id }}"
-                            >
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-500 tabular-nums font-mono">{{ $stockIn->id }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-900 whitespace-nowrap">{{ $stockIn->reference ?? '—' }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-800 tabular-nums whitespace-nowrap">{{ $stockIn->received_at->format('M d, Y') }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">{{ $stockIn->user?->name ?? 'System' }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-center tabular-nums text-slate-700">{{ $stockIn->items->count() }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold text-emerald-700 whitespace-nowrap">+{{ number_format($totalBatchQty, 2) }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 truncate max-w-xs">{{ $stockIn->notes ?? '—' }}</td>
-                                <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
-                                    <button 
-                                        @click.stop="contextMenu.openFromButton($event, { id: {{ $stockIn->id }}, reference: '{{ addslashes($stockIn->reference ?? '') }}' })"
-                                        type="button" 
-                                        class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
-                                        title="Options"
-                                    >
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
-                                        </svg>
-                                    </button>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="8" class="border border-slate-200 px-6 py-12 text-center text-slate-400">
-                                    <p class="font-medium text-xs">No stock-in records found matching your filters.</p>
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
+            <!-- Showing X of N Items Indicator (Left) & Customizable Amount Per Page (Right) -->
+            <div class="flex items-center justify-between text-xs text-slate-500">
+                <div>
+                    @if ($stockInHistory && $stockInHistory->total() > 0)
+                        Showing <span class="font-medium text-slate-700">{{ $stockInHistory->firstItem() }}</span> to
+                        <span class="font-medium text-slate-700">{{ $stockInHistory->lastItem() }}</span> of <span
+                            class="font-medium text-slate-700">{{ $stockInHistory->total() }}</span> items
+                    @else
+                        Showing <span class="font-medium text-slate-700">0</span> items
+                    @endif
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <label for="historyPerPage" class="text-xs text-slate-500">Show:</label>
+                    <select wire:model.live="historyPerPage" id="historyPerPage"
+                        class="h-8 w-16 rounded border border-slate-300 bg-white pl-2.5 pr-7 py-1 text-xs text-slate-700 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                        <option value="10">10</option>
+                        <option value="15">15</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                    </select>
+                    <span class="text-xs text-slate-500">items</span>
+                </div>
             </div>
-            @if ($stockInHistory && $stockInHistory->hasPages())
-                <div class="border-t border-slate-300 bg-slate-50 px-3 py-2">
-                    {{ $stockInHistory->links() }}
-                </div>
-            @endif
-        </div>
-    @endif
 
-    <!-- Catalog Product Picker Modal (No Giant Dropdown) -->
-    @if ($showProductPickerModal)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-            <div class="w-full max-w-3xl rounded-lg border border-slate-300 bg-white shadow-xl text-xs overflow-hidden flex flex-col max-h-[85vh]">
-                <div class="border-b border-slate-200 bg-slate-50 px-4 py-3 flex items-center justify-between">
-                    <div>
-                        <h2 class="font-heading font-bold text-sm uppercase tracking-wider text-slate-900">Select Product to Stock In</h2>
-                        <p class="text-[11px] text-slate-500">Filter or search products and click "Select" to populate the stock-in form.</p>
-                    </div>
-                    <button wire:click="closePickerModal" type="button" class="text-xl font-bold text-slate-400 hover:text-slate-700">&times;</button>
-                </div>
-
-                <!-- Filters -->
-                <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2">
-                    <input wire:model.live.debounce.250ms="pickerSearch" type="search" placeholder="Search by SKU or product name..." class="flex-1 min-w-[180px] rounded border-slate-300 px-2.5 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-0" />
-                    <select wire:model.live="pickerBrandId" class="w-36 rounded border-slate-300 px-2 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-0">
-                        <option value="">All Brands</option>
-                        @foreach ($brands as $b)
-                            <option value="{{ $b->id }}">{{ $b->name }}</option>
-                        @endforeach
-                    </select>
-                    <select wire:model.live="pickerCategoryId" class="w-36 rounded border-slate-300 px-2 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-0">
-                        <option value="">All Categories</option>
-                        @foreach ($categories as $c)
-                            <option value="{{ $c->id }}">{{ $c->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <!-- Products Table -->
-                <div class="flex-1 overflow-y-auto">
+            <!-- Table Container (div contains ONLY table and bottom pagination) -->
+            <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+                <div class="overflow-x-auto w-full">
                     <table class="w-full border-collapse border border-slate-300 text-xs">
-                        <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider sticky top-0 border-b border-slate-300">
-                            <tr>
-                                <th class="border border-slate-300 px-3 py-1.5 text-left w-28">SKU</th>
-                                <th class="border border-slate-300 px-3 py-1.5 text-left">Product Name</th>
-                                <th class="border border-slate-300 px-3 py-1.5 text-center w-16">Unit</th>
-                                <th class="border border-slate-300 px-3 py-1.5 text-left w-28">Brand</th>
-                                <th class="border border-slate-300 px-3 py-1.5 text-right w-24">Current Stock</th>
-                                <th class="border border-slate-300 px-3 py-1.5 text-center w-20">Select</th>
+                        <thead>
+                            <tr class="border-b border-slate-300 bg-slate-100 text-left font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
+                                <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16">ID</th>
+                                <th class="border border-slate-300 px-2.5 py-1.5 text-left w-36">Delivery Receipt</th>
+                                <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28">Received Date</th>
+                                <th class="border border-slate-300 px-2.5 py-1.5 text-left w-36">Received By</th>
+                                <th class="border border-slate-300 px-2.5 py-1.5 text-center w-20">Items</th>
+                                <th class="border border-slate-300 px-2.5 py-1.5 text-right w-28">Total Quantity</th>
+                                <th class="border border-slate-300 px-2.5 py-1.5 text-left">Notes</th>
+                                <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-200">
-                            @forelse ($pickerProducts as $prod)
-                                <tr class="hover:bg-slate-50 transition">
-                                    <td class="border border-slate-200 px-3 py-1.5 font-mono text-slate-700 whitespace-nowrap">{{ $prod->sku }}</td>
-                                    <td class="border border-slate-200 px-3 py-1.5 font-semibold text-slate-900">{{ $prod->name }}</td>
-                                    <td class="border border-slate-200 px-3 py-1.5 text-center text-slate-600 whitespace-nowrap">{{ $prod->packageUnit?->abbreviation ?? '—' }}</td>
-                                    <td class="border border-slate-200 px-3 py-1.5 text-slate-600 whitespace-nowrap">{{ $prod->brand?->name ?? '—' }}</td>
-                                    <td class="border border-slate-200 px-3 py-1.5 text-right tabular-nums font-semibold text-slate-800 whitespace-nowrap">{{ number_format((float) ($prod->inventory?->quantity ?? 0), 2) }}</td>
-                                    <td class="border border-slate-200 px-3 py-1.5 text-center whitespace-nowrap">
-                                        <button wire:click="selectFromPicker({{ $prod->id }})" type="button" class="rounded bg-[#00a3cc] px-2.5 py-0.5 text-xs font-semibold text-white hover:bg-[#008fb3] shadow-xs transition">
-                                            Select
+                            @forelse ($stockInHistory as $stockIn)
+                                @php
+                                    $totalBatchQty = $stockIn->items->sum('quantity');
+                                @endphp
+                                <tr 
+                                    @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $stockIn->id }}, reference: '{{ addslashes($stockIn->reference ?? '') }}' })"
+                                    class="hover:bg-slate-50 transition-colors cursor-default" 
+                                    wire:key="stock-in-history-{{ $stockIn->id }}"
+                                >
+                                    <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-500 tabular-nums font-mono">{{ $stockIn->id }}</td>
+                                    <td class="border border-slate-200 px-2.5 py-1.5 font-semibold text-slate-900 whitespace-nowrap">{{ $stockIn->reference ?? '—' }}</td>
+                                    <td class="border border-slate-200 px-2.5 py-1.5 text-slate-800 tabular-nums whitespace-nowrap">{{ $stockIn->received_at->format('M d, Y') }}</td>
+                                    <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">{{ $stockIn->user?->name ?? 'System' }}</td>
+                                    <td class="border border-slate-200 px-2.5 py-1.5 text-center tabular-nums text-slate-700">{{ $stockIn->items->count() }}</td>
+                                    <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold text-emerald-700 whitespace-nowrap">+{{ number_format($totalBatchQty, 2) }}</td>
+                                    <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 truncate max-w-xs">{{ $stockIn->notes ?? '—' }}</td>
+                                    <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                                        <button 
+                                            @click.stop="contextMenu.openFromButton($event, { id: {{ $stockIn->id }}, reference: '{{ addslashes($stockIn->reference ?? '') }}' })" 
+                                            type="button" 
+                                            class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
+                                            title="Options"
+                                        >
+                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+                                            </svg>
                                         </button>
                                     </td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="p-6 text-center text-slate-400">No products match your filter criteria.</td>
+                                    <td colspan="8" class="border border-slate-200 px-6 py-12 text-center text-slate-400">
+                                        <p class="font-medium text-xs">No stock-in records found matching your filters.</p>
+                                    </td>
                                 </tr>
                             @endforelse
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Flush and Flat Pagination -->
+                @if ($stockInHistory && $stockInHistory->hasPages())
+                    <div class="px-3 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                        <div>
+                            <span class="text-slate-500">
+                                Page <span class="font-medium text-slate-800">{{ $stockInHistory->currentPage() }}</span> of
+                                <span class="font-medium text-slate-800">{{ $stockInHistory->lastPage() }}</span>
+                            </span>
+                        </div>
+                        <div class="inline-flex items-center gap-1">
+                            <button wire:click="previousPage" type="button" @disabled($stockInHistory->onFirstPage())
+                                class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition">
+                                Prev
+                            </button>
+
+                            @php
+                                $currentPage = $stockInHistory->currentPage();
+                                $lastPage = $stockInHistory->lastPage();
+                                $startPage = max(1, $currentPage - 2);
+                                $endPage = min($lastPage, $currentPage + 2);
+                            @endphp
+
+                            @if ($startPage > 1)
+                                <button wire:click="gotoPage(1)" type="button"
+                                    class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                    1
+                                </button>
+                                @if ($startPage > 2)
+                                    <span class="px-1 text-slate-400">...</span>
+                                @endif
+                            @endif
+
+                            @for ($page = $startPage; $page <= $endPage; $page++)
+                                @if ($page === $currentPage)
+                                    <span
+                                        class="min-w-[28px] h-7 px-2 text-xs font-semibold rounded bg-slate-900 text-white flex items-center justify-center">
+                                        {{ $page }}
+                                    </span>
+                                @else
+                                    <button wire:click="gotoPage({{ $page }})" type="button"
+                                        class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                        {{ $page }}
+                                    </button>
+                                @endif
+                            @endfor
+
+                            @if ($endPage < $lastPage)
+                                @if ($endPage < $lastPage - 1)
+                                    <span class="px-1 text-slate-400">...</span>
+                                @endif
+                                <button wire:click="gotoPage({{ $lastPage }})" type="button"
+                                    class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                    {{ $lastPage }}
+                                </button>
+                            @endif
+
+                            <button wire:click="nextPage" type="button" @disabled(!$stockInHistory->hasMorePages())
+                                class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                @endif
+            </div>
+        </div>
+    @endif
+
+    <!-- Catalog Product Picker Modal (No Giant Dropdown) -->
+    @if ($showProductPickerModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 sm:p-6">
+            <div class="w-full max-w-4xl rounded-lg border border-slate-300 bg-white shadow-xl text-xs overflow-hidden flex flex-col max-h-[85vh]">
+                <div class="border-b border-slate-200 bg-slate-50 px-5 py-3.5 flex items-center justify-between">
+                    <div>
+                        <h2 class="font-heading font-bold text-sm uppercase tracking-wider text-slate-900">Select Product to Stock In</h2>
+                        <p class="text-[11px] text-slate-500">Filter or search products and click "Select" to populate the stock-in form.</p>
+                    </div>
+                    <button wire:click="closePickerModal" type="button" class="rounded border border-slate-300 bg-white p-1 text-slate-400 hover:text-slate-600 transition">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="p-5 flex-1 flex flex-col space-y-3.5 overflow-hidden">
+                    <!-- Filters -->
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <div class="flex-1 min-w-[200px]">
+                            <input wire:model.live.debounce.250ms="pickerSearch" type="search" placeholder="Search SKU or product name..." class="w-full h-9 rounded border border-slate-300 px-3 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+                        </div>
+                        <div class="w-40">
+                            <select wire:model.live="pickerBrandId" class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                                <option value="">All Brands</option>
+                                @foreach ($brands as $b)
+                                    <option value="{{ $b->id }}">{{ $b->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="w-44">
+                            <select wire:model.live="pickerCategoryId" class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                                <option value="">All Categories</option>
+                                @foreach ($categories as $c)
+                                    <option value="{{ $c->id }}">{{ $c->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        @if ($pickerSearch !== '' || $pickerBrandId !== '' || $pickerCategoryId !== '')
+                            <button wire:click="$set('pickerSearch', ''); $set('pickerBrandId', ''); $set('pickerCategoryId', '');" type="button"
+                                class="h-9 px-2 text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium inline-flex items-center">
+                                Reset
+                            </button>
+                        @endif
+                    </div>
+
+                    <!-- Products Table -->
+                    <div class="flex-1 overflow-y-auto rounded-lg border border-slate-300">
+                        <table class="w-full border-collapse border border-slate-300 text-xs">
+                            <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider sticky top-0 border-b border-slate-300">
+                                <tr>
+                                    <th class="border border-slate-300 px-3 py-2 text-left w-28">SKU</th>
+                                    <th class="border border-slate-300 px-3 py-2 text-left w-28">Brand</th>
+                                    <th class="border border-slate-300 px-3 py-2 text-left">Product Name</th>
+                                    <th class="border border-slate-300 px-3 py-2 text-center w-16">Unit</th>
+                                    <th class="border border-slate-300 px-3 py-2 text-right w-24">Current Stock</th>
+                                    <th class="border border-slate-300 px-3 py-2 text-center w-20">Select</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                @forelse ($pickerProducts as $prod)
+                                    <tr class="hover:bg-slate-50 transition">
+                                        <td class="border border-slate-200 px-3 py-2 font-mono text-slate-700 whitespace-nowrap">{{ $prod->sku }}</td>
+                                        <td class="border border-slate-200 px-3 py-2 text-slate-600 whitespace-nowrap">{{ $prod->brand?->name ?? '—' }}</td>
+                                        <td class="border border-slate-200 px-3 py-2 font-semibold text-slate-900">{{ $prod->name }}</td>
+                                        <td class="border border-slate-200 px-3 py-2 text-center text-slate-600 whitespace-nowrap">{{ $prod->packageUnit?->abbreviation ?? '—' }}</td>
+                                        <td class="border border-slate-200 px-3 py-2 text-right tabular-nums font-semibold text-slate-800 whitespace-nowrap">{{ number_format((float) ($prod->inventories->sum('quantity') ?? 0), 2) }}</td>
+                                        <td class="border border-slate-200 px-3 py-2 text-center whitespace-nowrap">
+                                            <button wire:click="selectFromPicker({{ $prod->id }})" type="button" class="rounded bg-[#00a3cc] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#008fb3] shadow-xs transition">
+                                                Select
+                                            </button>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="6" class="p-8 text-center text-slate-400">No products match your filter criteria.</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -881,7 +1014,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <p class="text-[11px] text-slate-500">
                             Received on {{ $viewingStockIn->received_at->format('F d, Y') }} by {{ $viewingStockIn->user?->name ?? 'System' }}
                             @if ($viewingStockIn->reference)
-                                · Reference: <strong class="text-slate-700">{{ $viewingStockIn->reference }}</strong>
+                                · Delivery Receipt: <strong class="text-slate-700">{{ $viewingStockIn->reference }}</strong>
                             @endif
                         </p>
                     </div>
@@ -907,9 +1040,9 @@ new #[Layout('layouts.app')] class extends Component {
                         <thead>
                             <tr class="border-b border-slate-300 bg-slate-100 text-left font-semibold uppercase text-slate-700 text-[10px] tracking-wider">
                                 <th class="border border-slate-300 px-3 py-1.5 w-28 whitespace-nowrap">SKU</th>
+                                <th class="border border-slate-300 px-3 py-1.5 w-28 whitespace-nowrap">Brand</th>
                                 <th class="border border-slate-300 px-3 py-1.5">Product Name</th>
                                 <th class="border border-slate-300 px-3 py-1.5 text-center w-16 whitespace-nowrap">Unit</th>
-                                <th class="border border-slate-300 px-3 py-1.5 w-28 whitespace-nowrap">Brand</th>
                                 <th class="border border-slate-300 px-3 py-1.5 text-right w-28 whitespace-nowrap">Quantity Received</th>
                                 <th class="border border-slate-300 px-3 py-1.5 text-right w-24 whitespace-nowrap">Unit Cost</th>
                             </tr>
@@ -920,14 +1053,14 @@ new #[Layout('layouts.app')] class extends Component {
                                     <td class="border border-slate-200 px-3 py-1.5 font-mono text-slate-600 whitespace-nowrap">
                                         {{ $item->product?->sku ?? '—' }}
                                     </td>
+                                    <td class="border border-slate-200 px-3 py-1.5 text-slate-700 whitespace-nowrap">
+                                        {{ $item->product?->brand?->name ?? '—' }}
+                                    </td>
                                     <td class="border border-slate-200 px-3 py-1.5 font-medium text-slate-900 min-w-[200px] max-w-md break-words whitespace-normal" title="{{ $item->product?->name }}">
                                         {{ $item->product?->name ?? 'Product' }}
                                     </td>
                                     <td class="border border-slate-200 px-3 py-1.5 text-center text-slate-600 whitespace-nowrap">
                                         {{ $item->product?->packageUnit?->abbreviation ?? '—' }}
-                                    </td>
-                                    <td class="border border-slate-200 px-3 py-1.5 text-slate-700 whitespace-nowrap">
-                                        {{ $item->product?->brand?->name ?? '—' }}
                                     </td>
                                     <td class="border border-slate-200 px-3 py-1.5 text-right tabular-nums font-bold text-emerald-700 whitespace-nowrap">
                                         +{{ number_format((float) $item->quantity, 2) }}

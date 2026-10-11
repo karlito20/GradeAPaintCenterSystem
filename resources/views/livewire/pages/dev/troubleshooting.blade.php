@@ -139,7 +139,7 @@ new #[Layout('layouts.app')] class extends Component {
 }; ?>
 
 <div class="space-y-5 w-full min-w-0 text-sm">
-    <div class="flex items-center justify-between pb-2 border-b border-gray-200">
+    <div class="flex items-center justify-between pb-3 border-b border-slate-300">
         <div>
             <div class="flex items-center gap-2">
                 <span class="inline-flex items-center rounded bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-800">DEV ONLY</span>

@@ -351,12 +351,28 @@ new #[Layout('layouts.app')] class extends Component {
     class="space-y-4 w-full min-w-0"
 >
     <!-- Header -->
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-300 pb-3">
         <div>
-            
-            <h1 class="font-heading text-2xl font-bold tracking-tight text-slate-900">Backups</h1>
+            <h1 class="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Backups</h1>
         </div>
-        
+        <div>
+            <button 
+                wire:click="createBackup" 
+                wire:confirm="Create a new full database backup snapshot now?"
+                wire:loading.attr="disabled" 
+                type="button"
+                class="inline-flex items-center justify-center gap-1.5 rounded bg-[#00a3cc] px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-white shadow-xs hover:bg-[#008fb3] transition disabled:opacity-50"
+            >
+                <span wire:loading.remove wire:target="createBackup">
+                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                </span>
+                <span wire:loading wire:target="createBackup">
+                    <svg class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                </span>
+                <span wire:loading.remove wire:target="createBackup">New Backup</span>
+                <span wire:loading wire:target="createBackup">Dumping DB...</span>
+            </button>
+        </div>
     </div>
 
     <!-- Main Workspace with Left Side Action Panel & Backups Table -->
@@ -364,43 +380,23 @@ new #[Layout('layouts.app')] class extends Component {
         <!-- Left Action & Info Panel -->
         <aside class="w-full lg:w-60 shrink-0 rounded-lg border border-slate-300 bg-white p-3.5 shadow-xs space-y-3.5">
             <div class="border-b border-slate-200 pb-2">
-                <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Backup Actions</span>
-            </div>
-
-            <!-- Create Backup Button -->
-            <div>
-                <button 
-                    wire:click="createBackup" 
-                    wire:confirm="Create a new full database backup snapshot now?"
-                    wire:loading.attr="disabled" 
-                    type="button"
-                    class="w-full inline-flex items-center justify-center gap-1.5 rounded bg-[#00a3cc] px-3.5 py-2 text-xs font-semibold uppercase tracking-wider text-white shadow-xs hover:bg-[#008fb3] transition disabled:opacity-50"
-                >
-                    <span wire:loading.remove wire:target="createBackup">
-                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                    </span>
-                    <span wire:loading wire:target="createBackup">
-                        <svg class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    </span>
-                    <span wire:loading.remove wire:target="createBackup">New Backup</span>
-                    <span wire:loading wire:target="createBackup">Dumping DB...</span>
-                </button>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Details</span>
             </div>
 
             <!-- Backup Summary Cards -->
-            <div class="border-t border-slate-200 pt-3 space-y-3">
-                <div class="rounded border border-slate-200 bg-slate-50 p-2.5">
-                    <p class="text-[10px] font-normal uppercase tracking-wider text-slate-500">Available Snapshots</p>
-                    <div class="mt-1 text-right">
-                        <span class="tabular-nums text-2xl font-light text-slate-900">{{ count($backups) }}</span>
-                    </div>
+            <div class="space-y-3">
+                <div class="rounded border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
+                    <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Backups</span>
+                    <span class="font-mono text-[11px] text-slate-800 font-medium block mt-0.5">
+                        {{ count($backups) }} snapshot{{ count($backups) === 1 ? '' : 's' }}
+                    </span>
                 </div>
 
                 @if (!empty($backups))
                     <div class="rounded border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
                         <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Latest Backup</span>
                         <span class="font-mono text-[11px] text-slate-800 font-medium block mt-0.5">
-                            {{ \Carbon\Carbon::parse($backups[0]['modified_at'])->format('M d, Y · h:i A') }}
+                            {{ \Carbon\Carbon::parse($backups[0]['modified_at'])->format('h:i A, M d Y') }}
                         </span>
                     </div>
                 @endif
@@ -410,14 +406,6 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="border-t border-slate-200 pt-3 space-y-2">
                 <div class="flex items-center justify-between">
                     <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Auto-Backup</span>
-                    @if ($backupFrequency !== 'disabled')
-                        <span class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold {{ $isOverdue ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800' }}">
-                            <span class="h-1.5 w-1.5 rounded-full {{ $isOverdue ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500' }}"></span>
-                            {{ $isOverdue ? 'Overdue' : 'Active' }}
-                        </span>
-                    @else
-                        <span class="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">Off</span>
-                    @endif
                 </div>
 
                 <div>
@@ -439,7 +427,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class="flex justify-between items-center text-slate-600">
                             <span class="text-[10px] uppercase font-bold text-slate-500">Next Due</span>
                             <span class="font-mono text-[11px] {{ $isOverdue ? 'text-amber-900 font-bold' : 'text-slate-800 font-medium' }}">
-                                {{ $nextDueTime ? $nextDueTime->format('M d · h:i A') : 'Immediately' }}
+                                {{ $nextDueTime ? $nextDueTime->format('M d Y') : 'Immediately' }}
                             </span>
                         </div>
                         @if ($isOverdue)
@@ -457,19 +445,6 @@ new #[Layout('layouts.app')] class extends Component {
                         @endif
                     </div>
                 @endif
-                
-                <p class="text-[10px] text-slate-400 leading-tight">
-                    Automatically creates database backups if overdue during login, scheduled runs, and system startup.
-                </p>
-            </div>
-
-            <!-- Safety Notice -->
-            <div class="border-t border-slate-200 pt-3 text-[11px] text-amber-800 rounded bg-amber-50/70 p-2.5 border border-amber-200">
-                <div class="flex items-center gap-1 font-bold text-amber-900 mb-1">
-                    <svg class="h-3.5 w-3.5 text-amber-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                    <span>Restore Notice</span>
-                </div>
-                Restoring overwrites current database records with snapshot contents.
             </div>
         </aside>
 

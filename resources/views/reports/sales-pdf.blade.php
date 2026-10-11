@@ -114,7 +114,7 @@
 <body>
     <div class="header">
         <h1 class="store-name">Grade A Paint Center</h1>
-        <div class="sub-header">Lapu-Lapu St., Agdao, Davao City · POS &amp; Inventory Management System</div>
+        <div class="sub-header">Lapu-Lapu St., Agdao, Davao City</div>
         <div class="report-title">Sales Revenue &amp; Financial Audit Report</div>
         <div class="meta-line">
             Generated: {{ $generatedAt->format('F d, Y · h:i A') }}
@@ -220,7 +220,6 @@
         <table style="width: 100%; border-collapse: collapse;">
             <tr>
                 <td style="width: 50%; vertical-align: bottom;">
-                    <div style="font-size: 7.5px; color: #6b7280;">Certified accurate based on official POS transactional audit logs.</div>
                 </td>
                 <td style="width: 50%; vertical-align: top; text-align: right;">
                     <div style="display: inline-block; text-align: left; min-width: 220px;">
@@ -235,10 +234,6 @@
                 </td>
             </tr>
         </table>
-    </div>
-
-    <div class="footer">
-        Grade A Paint Center — Official Sales &amp; Revenue Audit Record — Lapu-Lapu St., Agdao, Davao City
     </div>
 </body>
 </html>

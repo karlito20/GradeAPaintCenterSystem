@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Product extends Model
 {
@@ -21,6 +20,7 @@ class Product extends Model
         'manufacturer_code',
         'description',
         'active',
+        'requires_physical_check',
     ];
 
     protected function casts(): array
@@ -30,6 +30,7 @@ class Product extends Model
             'selling_price' => 'decimal:2',
             'low_stock_threshold' => 'decimal:2',
             'active' => 'boolean',
+            'requires_physical_check' => 'boolean',
         ];
     }
 
@@ -48,9 +49,19 @@ class Product extends Model
         return $this->belongsTo(PackageUnit::class);
     }
 
-    public function inventory(): HasOne
+    public function inventories(): HasMany
     {
-        return $this->hasOne(Inventory::class);
+        return $this->hasMany(Inventory::class);
+    }
+
+    public function getInventory(string $location = 'storage'): ?Inventory
+    {
+        return $this->inventories()->where('location', $location)->first();
+    }
+
+    public function containers(): HasMany
+    {
+        return $this->hasMany(Container::class);
     }
 
     public function inventoryMovements(): HasMany
@@ -95,5 +106,51 @@ class Product extends Model
         }
 
         return $unit ?: ($this->packageUnit?->name ?? '—');
+    }
+
+    public function isPaint(): bool
+    {
+        $catName = strtolower($this->category?->name ?? '');
+        if (str_contains($catName, 'tool') || str_contains($catName, 'hardware')) {
+            return false;
+        }
+
+        $unitAbbr = strtolower($this->packageUnit?->abbreviation ?? '');
+        $unitName = strtolower($this->packageUnit?->name ?? '');
+        if (in_array($unitAbbr, ['gal', 'gallon']) || in_array($unitName, ['gallon', 'gal'])) {
+            return true;
+        }
+
+        return str_contains($catName, 'paint')
+            || str_contains($catName, 'tint')
+            || str_contains($catName, 'mixing')
+            || str_contains($catName, 'acrylic');
+    }
+
+    public function canBeRepacked(): bool
+    {
+        $catName = strtolower($this->category?->name ?? '');
+        if (str_contains($catName, 'primer') || str_contains($catName, 'catalyst') || str_contains($catName, 'tool')) {
+            return false;
+        }
+
+        $unitAbbr = strtolower($this->packageUnit?->abbreviation ?? '');
+
+        return $this->isPaint() && in_array($unitAbbr, ['gal', 'gallon', 'gals']);
+    }
+
+    public function getStorageStock(): float
+    {
+        return (float) ($this->inventories->where('location', 'storage')->first()?->quantity ?? 0);
+    }
+
+    public function getStorefrontStock(): float
+    {
+        return (float) ($this->inventories->where('location', 'storefront')->first()?->quantity ?? 0);
+    }
+
+    public function getTotalAvailableStock(): float
+    {
+        return $this->getStorageStock() + $this->getStorefrontStock();
     }
 }

@@ -18,6 +18,12 @@ new #[Layout('layouts.app')] class extends Component {
     public string $userId = '';
     public string $dateFrom = '';
     public string $dateTo = '';
+    public int $perPage = 25;
+
+    public function updatedPerPage(): void
+    {
+        $this->resetPage();
+    }
 
     public function updatedSearch(): void
     {
@@ -78,13 +84,19 @@ new #[Layout('layouts.app')] class extends Component {
             ->when($this->dateTo !== '', fn ($q) => $q->whereDate('created_at', '<=', $this->dateTo))
             ->latest('id');
 
-        // Summary metrics based on current filters
+        // Summary metrics based on current filters (transfers are internal location shifts, not external inflow/outflow)
         $summaryQuery = clone $query;
-        $totalIn = (float) (clone $summaryQuery)->where('quantity_change', '>', 0)->sum('quantity_change');
-        $totalOut = (float) abs((clone $summaryQuery)->where('quantity_change', '<', 0)->sum('quantity_change'));
+        $totalIn = (float) (clone $summaryQuery)
+            ->when($this->type === '', fn ($q) => $q->whereNotIn('type', ['transfer_in', 'transfer_out']))
+            ->where('quantity_change', '>', 0)
+            ->sum('quantity_change');
+        $totalOut = (float) abs((clone $summaryQuery)
+            ->when($this->type === '', fn ($q) => $q->whereNotIn('type', ['transfer_in', 'transfer_out']))
+            ->where('quantity_change', '<', 0)
+            ->sum('quantity_change'));
 
         return view('livewire.pages.inventory.movements', [
-            'movements' => $query->paginate(25),
+            'movements' => $query->paginate($this->perPage),
             'types' => InventoryMovement::query()->distinct()->orderBy('type')->pluck('type'),
             'brands' => Brand::query()->where('active', true)->orderBy('name')->get(),
             'categories' => Category::query()->where('active', true)->orderBy('name')->get(),
@@ -145,7 +157,7 @@ new #[Layout('layouts.app')] class extends Component {
     <!-- Header -->
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-300 pb-3">
         <div>
-            <h1 class="font-heading text-xl font-bold tracking-tight text-slate-900">Movements</h1>
+            <h1 class="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Movements</h1>
         </div>
     </div>
 
@@ -170,21 +182,21 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
     </div>
 
-    <!-- Table Container with Seamless Top Filters -->
-    <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-        <!-- Horizontal Filter Bar -->
-        <div class="p-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap xl:flex-nowrap items-center gap-2 overflow-x-auto">
-            <div class="w-44 min-w-[150px]">
+    <!-- Main Movements Section with Standardized Space-y-2 Spacing -->
+    <div class="space-y-2">
+        <!-- Filter Controls Outside the Table Div (Aligned left, h-9 controls) -->
+        <div class="flex flex-wrap items-center gap-2.5">
+            <div class="w-64">
                 <input 
                     wire:model.live.debounce.300ms="search" 
                     type="search" 
                     placeholder="Search SKU, name..." 
-                    class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+                    class="w-full h-9 rounded border border-slate-300 px-3 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
                 />
             </div>
 
-            <div class="w-32">
-                <select wire:model.live="type" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+            <div class="w-36">
+                <select wire:model.live="type" class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="">All Types</option>
                     @foreach ($types as $movementType)
                         <option value="{{ $movementType }}">
@@ -198,8 +210,8 @@ new #[Layout('layouts.app')] class extends Component {
                 </select>
             </div>
 
-            <div class="w-28">
-                <select wire:model.live="brandId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+            <div class="w-36">
+                <select wire:model.live="brandId" class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="">All Brands</option>
                     @foreach ($brands as $brand)
                         <option value="{{ $brand->id }}">{{ $brand->name }}</option>
@@ -207,8 +219,8 @@ new #[Layout('layouts.app')] class extends Component {
                 </select>
             </div>
 
-            <div class="w-28">
-                <select wire:model.live="categoryId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+            <div class="w-36">
+                <select wire:model.live="categoryId" class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="">All Categories</option>
                     @foreach ($categories as $category)
                         <option value="{{ $category->id }}">{{ $category->name }}</option>
@@ -216,8 +228,8 @@ new #[Layout('layouts.app')] class extends Component {
                 </select>
             </div>
 
-            <div class="w-28">
-                <select wire:model.live="userId" class="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+            <div class="w-36">
+                <select wire:model.live="userId" class="w-full h-9 rounded border border-slate-300 pl-2.5 pr-8 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="">All Users</option>
                     @foreach ($users as $user)
                         <option value="{{ $user->id }}">{{ $user->name }}</option>
@@ -225,37 +237,63 @@ new #[Layout('layouts.app')] class extends Component {
                 </select>
             </div>
 
-            <div class="flex items-center gap-1 text-xs text-slate-600">
-                <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">From:</span>
-                <input wire:model.live="dateFrom" type="date" class="w-28 rounded border border-slate-300 px-1.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+            <div class="flex items-center gap-1.5 text-xs text-slate-600">
+                <span class="font-semibold text-[11px] uppercase">From:</span>
+                <input wire:model.live="dateFrom" type="date" title="From Date" class="h-9 rounded border border-slate-300 px-2.5 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
             </div>
 
-            <div class="flex items-center gap-1 text-xs text-slate-600">
-                <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">To:</span>
-                <input wire:model.live="dateTo" type="date" class="w-28 rounded border border-slate-300 px-1.5 py-1 text-xs focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+            <div class="flex items-center gap-1.5 text-xs text-slate-600">
+                <span class="font-semibold text-[11px] uppercase">To:</span>
+                <input wire:model.live="dateTo" type="date" title="To Date" class="h-9 rounded border border-slate-300 px-2.5 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
             </div>
 
-            <button wire:click="resetFilters" type="button" class="text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium ml-auto whitespace-nowrap">
-                Reset
-            </button>
+            @if ($search !== '' || $type !== '' || $brandId !== '' || $categoryId !== '' || $userId !== '' || $dateFrom !== '' || $dateTo !== '')
+                <button wire:click="resetFilters" type="button" class="h-9 px-2 text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium inline-flex items-center">
+                    Reset
+                </button>
+            @endif
         </div>
 
-        <!-- Dashboard-styled Grid Table -->
-        <div class="overflow-x-auto">
+        <!-- Showing X of N Items Indicator (Left) & Customizable Amount Per Page (Right) -->
+        <div class="flex items-center justify-between text-xs text-slate-500">
+            <div>
+                @if ($movements->total() > 0)
+                    Showing <span class="font-medium text-slate-700">{{ $movements->firstItem() }}</span> to
+                    <span class="font-medium text-slate-700">{{ $movements->lastItem() }}</span> of <span
+                        class="font-medium text-slate-700">{{ $movements->total() }}</span> items
+                @else
+                    Showing <span class="font-medium text-slate-700">0</span> items
+                @endif
+            </div>
+            <div class="flex items-center gap-1.5">
+                <label for="movementsPerPage" class="text-xs text-slate-500">Show:</label>
+                <select wire:model.live="perPage" id="movementsPerPage"
+                    class="h-8 w-16 rounded border border-slate-300 bg-white pl-2.5 pr-7 py-1 text-xs text-slate-700 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+                <span class="text-xs text-slate-500">items</span>
+            </div>
+        </div>
+
+        <!-- Table Container (div contains ONLY table and bottom pagination) -->
+        <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+            <div class="overflow-x-auto w-full">
             <table class="w-full border-collapse border border-slate-300 text-xs">
                 <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                     <tr>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">SKU</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[200px]">Product Name</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Unit</th>
-                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">Brand</th>
+                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-20 whitespace-nowrap">Location</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-24 whitespace-nowrap">Date</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-20 whitespace-nowrap">Time</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-28 whitespace-nowrap">Type</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">Change</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-20 whitespace-nowrap">Before</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-right w-20 whitespace-nowrap">After</th>
-                        <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left">Reference</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">User</th>
                         <th scope="col" class="border border-slate-300 px-2.5 py-1.5 text-center w-12 whitespace-nowrap">Actions</th>
                     </tr>
@@ -281,8 +319,8 @@ new #[Layout('layouts.app')] class extends Component {
                             <td class="border border-slate-200 px-2.5 py-1.5 text-center text-slate-600 whitespace-nowrap">
                                 {{ $unit }}
                             </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
-                                {{ $movement->product?->brand?->name ?? '—' }}
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap capitalize">
+                                {{ $movement->location ?? '—' }}
                             </td>
                             <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-800 whitespace-nowrap">
                                 {{ $movement->created_at->format('M d, Y') }}
@@ -299,6 +337,10 @@ new #[Layout('layouts.app')] class extends Component {
                                     <span class="text-[10px] font-bold uppercase text-amber-700">Count Adj.</span>
                                 @elseif ($movement->type === 'mixing')
                                     <span class="text-[10px] font-bold uppercase text-purple-700">Mixing</span>
+                                @elseif ($movement->type === 'transfer_in')
+                                    <span class="text-[10px] font-bold uppercase text-cyan-700">Transfer In</span>
+                                @elseif ($movement->type === 'transfer_out')
+                                    <span class="text-[10px] font-bold uppercase text-cyan-700">Transfer Out</span>
                                 @else
                                     <span class="text-[10px] font-bold uppercase text-slate-700">{{ str_replace('_', ' ', $movement->type) }}</span>
                                 @endif
@@ -311,9 +353,6 @@ new #[Layout('layouts.app')] class extends Component {
                             </td>
                             <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900 whitespace-nowrap">
                                 {{ number_format((float) $movement->quantity_after, 2) }}
-                            </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700">
-                                {{ $refText }}
                             </td>
                             <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
                                 {{ $movement->user?->name ?? 'System' }}
@@ -333,7 +372,7 @@ new #[Layout('layouts.app')] class extends Component {
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="13" class="border border-slate-200 px-6 py-12 text-center text-slate-500">
+                            <td colspan="12" class="border border-slate-200 px-6 py-12 text-center text-slate-500">
                                 <div class="mx-auto flex flex-col items-center justify-center">
                                     <svg class="h-8 w-8 text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -347,11 +386,70 @@ new #[Layout('layouts.app')] class extends Component {
             </table>
         </div>
 
-        @if ($movements->hasPages())
-            <div class="border-t border-slate-300 px-3 py-2 bg-slate-50">
-                {{ $movements->links() }}
-            </div>
-        @endif
+            <!-- Flush and Flat Pagination -->
+            @if ($movements->hasPages())
+                <div class="px-3 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                    <div>
+                        <span class="text-slate-500">
+                            Page <span class="font-medium text-slate-800">{{ $movements->currentPage() }}</span> of
+                            <span class="font-medium text-slate-800">{{ $movements->lastPage() }}</span>
+                        </span>
+                    </div>
+                    <div class="inline-flex items-center gap-1">
+                        <button wire:click="previousPage" type="button" @disabled($movements->onFirstPage())
+                            class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition">
+                            Prev
+                        </button>
+
+                        @php
+                            $currentPage = $movements->currentPage();
+                            $lastPage = $movements->lastPage();
+                            $startPage = max(1, $currentPage - 2);
+                            $endPage = min($lastPage, $currentPage + 2);
+                        @endphp
+
+                        @if ($startPage > 1)
+                            <button wire:click="gotoPage(1)" type="button"
+                                class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                1
+                            </button>
+                            @if ($startPage > 2)
+                                <span class="px-1 text-slate-400">...</span>
+                            @endif
+                        @endif
+
+                        @for ($page = $startPage; $page <= $endPage; $page++)
+                            @if ($page === $currentPage)
+                                <span
+                                    class="min-w-[28px] h-7 px-2 text-xs font-semibold rounded bg-slate-900 text-white flex items-center justify-center">
+                                    {{ $page }}
+                                </span>
+                            @else
+                                <button wire:click="gotoPage({{ $page }})" type="button"
+                                    class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                    {{ $page }}
+                                </button>
+                            @endif
+                        @endfor
+
+                        @if ($endPage < $lastPage)
+                            @if ($endPage < $lastPage - 1)
+                                <span class="px-1 text-slate-400">...</span>
+                            @endif
+                            <button wire:click="gotoPage({{ $lastPage }})" type="button"
+                                class="min-w-[28px] h-7 px-2 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 transition">
+                                {{ $lastPage }}
+                            </button>
+                        @endif
+
+                        <button wire:click="nextPage" type="button" @disabled(!$movements->hasMorePages())
+                            class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition">
+                            Next
+                        </button>
+                    </div>
+                </div>
+            @endif
+        </div>
     </div>
 
     <!-- Global Floating Context Menu -->
@@ -376,31 +474,6 @@ new #[Layout('layouts.app')] class extends Component {
         >
             <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
             <span>Copy SKU</span>
-        </button>
-        <button 
-            @click="if (contextMenu.item?.reference && contextMenu.item.reference !== '—') { copyToClipboard(contextMenu.item.reference); } contextMenu.close();" 
-            type="button" 
-            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-        >
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-            <span>Copy Reference</span>
-        </button>
-        <div class="my-1 border-t border-slate-100"></div>
-        <button 
-            @click="if (contextMenu.item?.sku) { $wire.set('search', contextMenu.item.sku); } contextMenu.close();" 
-            type="button" 
-            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-        >
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            <span>Filter by this SKU</span>
-        </button>
-        <button 
-            @click="if (contextMenu.item?.type) { $wire.set('type', contextMenu.item.type); } contextMenu.close();" 
-            type="button" 
-            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-        >
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
-            <span>Filter by this Type</span>
         </button>
     </div>
 </div>

@@ -117,7 +117,7 @@
 <body>
     <div class="header">
         <h1 class="store-name">Grade A Paint Center</h1>
-        <div class="sub-header">Lapu-Lapu St., Agdao, Davao City · POS & Inventory Management System</div>
+        <div class="sub-header">Lapu-Lapu St., Agdao, Davao City</div>
         <div class="report-title">Inventory Stock Movement & Balance Report</div>
         <div class="meta-line">
             Generated: {{ $generatedAt->format('F d, Y · h:i A') }}
@@ -160,15 +160,16 @@
         <thead>
             <tr>
                 <th style="width: 10%;">SKU</th>
-                <th style="width: 24%;">Product Name</th>
+                <th style="width: 11%;">Brand</th>
+                <th style="width: 20%;">Product Name</th>
                 <th style="width: 6%;">Unit</th>
-                <th style="width: 13%;">Brand</th>
-                <th style="width: 13%;">Category</th>
-                <th style="width: 8%;" class="text-right">Start Bal</th>
+                <th style="width: 11%;">Category</th>
+                <th style="width: 6%;" class="text-center">Status</th>
+                <th style="width: 7%;" class="text-right">Start Bal</th>
                 <th style="width: 7%;" class="text-right">Stock In</th>
                 <th style="width: 7%;" class="text-right">Stock Out</th>
                 <th style="width: 7%;" class="text-right">End Bal</th>
-                <th style="width: 5%;" class="text-center">Status</th>
+                <th style="width: 8%;" class="text-right">Price</th>
             </tr>
         </thead>
         <tbody>
@@ -187,19 +188,20 @@
                 @endphp
                 <tr>
                     <td class="font-mono"><strong>{{ $item->sku }}</strong></td>
+                    <td>{{ $item->brand_name }}</td>
                     <td>{{ $item->name }}</td>
                     <td>{{ $item->unit }}</td>
-                    <td>{{ $item->brand_name }}</td>
                     <td>{{ $item->category_name }}</td>
+                    <td class="text-center {{ $statusClass }}">{{ $statusText }}</td>
                     <td class="text-right font-mono">{{ number_format($item->starting_balance, 2) }}</td>
                     <td class="text-right font-mono" style="color: #047857;">{{ $item->stock_in > 0 ? '+'.number_format($item->stock_in, 2) : '0.00' }}</td>
                     <td class="text-right font-mono" style="color: #b91c1c;">{{ $item->stock_out > 0 ? '-'.number_format($item->stock_out, 2) : '0.00' }}</td>
                     <td class="text-right font-mono" style="font-weight: bold;">{{ number_format($item->remaining_balance, 2) }}</td>
-                    <td class="text-center {{ $statusClass }}">{{ $statusText }}</td>
+                    <td class="text-right font-mono font-bold">{{ \App\Support\Currency::format($item->selling_price) }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="10" class="text-center" style="padding: 15px; color: #64748b;">
+                    <td colspan="11" class="text-center" style="padding: 15px; color: #64748b;">
                         No inventory records match the selected filter criteria.
                     </td>
                 </tr>
@@ -212,7 +214,6 @@
         <table style="width: 100%; border-collapse: collapse;">
             <tr>
                 <td style="width: 55%; vertical-align: bottom;">
-                    <span style="font-size: 7.5px; color: #64748b;">Certified accurate physical and movement count for store inventory.</span>
                 </td>
                 <td style="width: 45%; vertical-align: top; text-align: right;">
                     <div style="display: inline-block; text-align: left; min-width: 220px;">
@@ -227,10 +228,6 @@
                 </td>
             </tr>
         </table>
-    </div>
-
-    <div class="footer">
-        Grade A Paint Center — Confidential Store Inventory Record — Lapu-Lapu St., Agdao, Davao City
     </div>
 </body>
 </html>

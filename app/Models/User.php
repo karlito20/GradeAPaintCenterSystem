@@ -38,6 +38,11 @@ class User extends Authenticatable
         return $this->hasRole(['superadmin', 'admin']);
     }
 
+    public function isAdminOrSuperadmin(): bool
+    {
+        return $this->hasRole(['superadmin', 'admin']);
+    }
+
     public function canAccessSettings(): bool
     {
         return $this->hasRole(['superadmin', 'admin']);
@@ -53,12 +58,32 @@ class User extends Authenticatable
         return $this->hasRole(['superadmin', 'admin', 'manager', 'mixer']);
     }
 
+    public function canCheckout(): bool
+    {
+        return $this->hasRole(['superadmin', 'admin', 'manager']);
+    }
+
+    public function canAccessPos(): bool
+    {
+        return $this->hasRole(['superadmin', 'admin', 'manager']);
+    }
+
     public function isManagerOrAbove(): bool
     {
         return $this->hasRole(['superadmin', 'admin', 'manager']);
     }
 
     public function canViewSalesReport(): bool
+    {
+        return $this->hasRole(['superadmin', 'admin', 'manager']);
+    }
+
+    public function canManagePurchaseOrders(): bool
+    {
+        return $this->hasRole(['superadmin', 'admin', 'manager']);
+    }
+
+    public function canManageProducts(): bool
     {
         return $this->hasRole(['superadmin', 'admin', 'manager']);
     }

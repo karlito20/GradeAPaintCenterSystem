@@ -2,6 +2,7 @@
 
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\Container;
 use App\Models\Inventory;
 use App\Models\InventoryMovement;
 use App\Models\Product;
@@ -21,7 +22,8 @@ function inventoryProduct(array $attributes = []): Product
         'active' => true,
     ], $attributes));
 
-    Inventory::create(['product_id' => $product->id, 'quantity' => 0]);
+    Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 0]);
+    Inventory::create(['product_id' => $product->id, 'location' => 'storage', 'quantity' => 0]);
 
     return $product;
 }
@@ -32,45 +34,73 @@ test('stock in increases inventory and records a movement', function () {
 
     Volt::actingAs($user)
         ->test('pages.inventory.stock-in')
+        ->set('reference', 'DR-1234')
         ->set('productId', $product->id)
         ->set('quantity', '5')
         ->call('addItem')
         ->call('saveStockIn')
         ->assertHasNoErrors();
 
-    expect((float) $product->fresh()->inventory->quantity)->toBe(5.0)
+    expect((float) $product->fresh()->inventories->sum('quantity'))->toBe(5.0)
         ->and(InventoryMovement::where('product_id', $product->id)->where('type', 'stock_in')->count())->toBe(1);
 });
 
 test('a sale cannot exceed available inventory and reduces stock when valid', function () {
     $user = User::factory()->create();
     $product = inventoryProduct();
-    $product->inventory->update(['quantity' => 2]);
+    $product->inventories()->where('location', 'storefront')->update(['quantity' => 2]);
+
+    Container::create([
+        'product_id' => $product->id,
+        'location' => 'storefront',
+        'identifier' => 'CONT-1',
+        'capacity' => 1,
+        'current_quantity' => 1,
+        'is_sealed' => true,
+    ]);
+    Container::create([
+        'product_id' => $product->id,
+        'location' => 'storefront',
+        'identifier' => 'CONT-2',
+        'capacity' => 1,
+        'current_quantity' => 1,
+        'is_sealed' => true,
+    ]);
 
     Volt::actingAs($user)
         ->test('pages.sales.index')
-        ->set('productId', $product->id)
-        ->set('quantity', '3')
-        ->call('finalizeSale')
+        ->set('selectedProductId', (string) $product->id)
+        ->set('addQty', 3)
+        ->call('addToCart')
         ->assertHasErrors('productId');
 
-    expect((float) $product->fresh()->inventory->quantity)->toBe(2.0);
+    expect((float) $product->fresh()->inventories->sum('quantity'))->toBe(2.0);
+
+    session()->put('pos.cart', [
+        'product:'.$product->id => [
+            'type' => 'normal',
+            'product_id' => $product->id,
+            'description' => $product->name,
+            'quantity' => 1,
+            'unit_price' => $product->selling_price,
+            'subtotal' => $product->selling_price,
+        ],
+    ]);
 
     Volt::actingAs($user)
-        ->test('pages.sales.index')
-        ->set('productId', $product->id)
-        ->set('quantity', '1')
-        ->call('finalizeSale')
+        ->test('pages.sales.checkout')
+        ->set('tenderedAmount', $product->selling_price)
+        ->call('completeSale')
         ->assertHasNoErrors();
 
-    expect((float) $product->fresh()->inventory->quantity)->toBe(1.0)
+    expect((float) $product->fresh()->inventories->sum('quantity'))->toBe(1.0)
         ->and(InventoryMovement::where('product_id', $product->id)->where('type', 'sale')->count())->toBe(1);
 });
 
 test('inventory report calculates balances and exports PDF with date filters', function () {
     $user = User::factory()->create();
     $product = inventoryProduct(['sku' => 'REPORT-SKU-1', 'name' => 'Report Paint Item']);
-    $product->inventory->update(['quantity' => 15]);
+    $product->inventories()->where('location', 'storefront')->update(['quantity' => 15]);
 
     // Record movements
     InventoryMovement::create([
@@ -98,7 +128,7 @@ test('inventory report calculates balances and exports PDF with date filters', f
     $product->update(['brand_id' => $brandA->id]);
 
     $productB = inventoryProduct(['sku' => 'REPORT-SKU-2', 'name' => 'Beta Paint Item', 'brand_id' => $brandB->id]);
-    $productB->inventory->update(['quantity' => 10]);
+    $productB->inventories()->where('location', 'storefront')->update(['quantity' => 10]);
 
     // Test livewire inventory report component
     Volt::actingAs($user)
@@ -108,9 +138,8 @@ test('inventory report calculates balances and exports PDF with date filters', f
         ->assertSee('REPORT-SKU-1')
         ->assertSee('Report Paint Item')
         ->assertSee('Brand Alpha')
-        ->assertSee('Report Prepared &amp; Certified By', false)
+        ->assertDontSee('Report Prepared &amp; Certified By', false)
         ->assertDontSee('Report produced by')
-        ->assertSee($user->name)
         ->assertSee('20.00')
         ->assertSee('5.00')
         ->assertSee('15.00')

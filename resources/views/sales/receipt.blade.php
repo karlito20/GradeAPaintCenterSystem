@@ -24,25 +24,32 @@
     <!-- Official Printable Receipt Container -->
     <div class="print-receipt-container rounded border border-slate-300 bg-white p-4 sm:p-5 shadow-xs text-xs font-sans print:border-none print:shadow-none print:p-0">
         <!-- Store Information & Receipt Header -->
-        <div class="text-center border-b border-dashed border-slate-300 pb-2.5">
-            <h1 class="text-base font-black uppercase tracking-wider text-slate-900 font-heading">Grade A Paint Center</h1>
-            <p class="text-[11px] text-slate-600">Retail Paint, Tinting &amp; Painting Supplies</p>
+        <div class="text-center pb-2">
+            <h1 class="text-base font-bold uppercase tracking-wider text-slate-900 font-heading">Grade A Paint Center</h1>
             <p class="text-[10px] text-slate-500">Lapu-Lapu St., Agdao, Davao City</p>
-            <p class="text-[10px] font-bold text-slate-700 tracking-wider uppercase mt-1">Official Sales Receipt</p>
+            @if ($sale->mixingTransaction && in_array($sale->mixingTransaction->status, ['downpaid', 'pending_mix']))
+                <p class="text-[10px] font-bold text-slate-800 tracking-wider uppercase mt-1">Custom Mix — Downpayment Receipt</p>
+                <p class="text-[9px] text-slate-500">Paint order is queued for formulation</p>
+            @elseif ($sale->mixingTransaction && in_array($sale->mixingTransaction->status, ['mixed', 'ready_for_pickup']))
+                <p class="text-[10px] font-bold text-slate-800 tracking-wider uppercase mt-1">Custom Mix — Ready for Pickup</p>
+                <p class="text-[9px] text-slate-500">Formula completed - Balance due upon release</p>
+            @else
+                <p class="text-[10px] font-bold text-slate-700 tracking-wider uppercase mt-1">Official Sales Receipt</p>
+            @endif
         </div>
 
         <!-- Transaction Meta -->
-        <div class="mt-2.5 grid grid-cols-2 gap-2 text-[11px] border-b border-dashed border-slate-300 pb-2.5">
+        <div class="mt-2 grid grid-cols-2 gap-2 text-[11px] border-t border-slate-200 pt-2">
             <div class="space-y-0.5">
                 <p><span class="text-slate-500">Invoice:</span> <strong class="tabular-nums text-slate-900">{{ $sale->invoice_number }}</strong></p>
                 <p><span class="text-slate-500">Date:</span> <span class="tabular-nums text-slate-800">{{ $sale->sold_at->format('M d, Y h:i A') }}</span></p>
                 @if ($sale->customer_name)
-                    <p><span class="text-slate-500">Customer:</span> <strong class="text-slate-900">{{ $sale->customer_name }}</strong>{{ $sale->customer_contact ? ' (' . $sale->customer_contact . ')' : '' }}</p>
+                    <p><span class="text-slate-500">Customer:</span> {{ $sale->customer_name }}{{ $sale->customer_contact ? ' (' . $sale->customer_contact . ')' : '' }}</p>
                 @endif
             </div>
             <div class="text-right space-y-0.5">
                 <p><span class="text-slate-500">Cashier:</span> <span class="text-slate-900 font-medium">{{ $sale->user?->name ?? 'Staff' }}</span></p>
-                <p><span class="text-slate-500">Type:</span> <span class="capitalize font-semibold text-slate-900">{{ str_replace('_', ' ', $sale->type) }}</span></p>
+                <p><span class="text-slate-500">Type:</span> <span class="capitalize  text-slate-900">{{ str_replace('_', ' ', $sale->type) }}</span></p>
                 @if ($sale->quotation)
                     <p><span class="text-slate-500">Quote:</span> <span class="font-mono text-slate-800">{{ $sale->quotation->quote_number }}</span></p>
                 @endif
@@ -50,37 +57,45 @@
         </div>
 
         <!-- Line Items Table -->
-        <table class="mt-2.5 min-w-full text-left text-xs">
+        <table class="mt-2 min-w-full text-left text-xs border-t border-slate-200">
             <thead>
-                <tr class="text-[10px] font-bold text-slate-500 uppercase border-b border-slate-300">
+                <tr class="text-[10px] font-bold text-slate-500 uppercase">
                     <th class="py-1 text-left">Item</th>
                     <th class="py-1 text-center w-12">Qty</th>
                     <th class="py-1 text-right w-16">Price</th>
                     <th class="py-1 text-right w-20">Total</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody>
                 @foreach ($sale->items as $item)
                     <tr>
-                        <td class="py-1.5 pr-2">
-                            <div class="font-semibold text-slate-900 leading-tight">{{ $item->description }}</div>
+                        <td class="py-1 pr-2">
+                            <div class=" text-slate-900 leading-tight">{{ $item->description }}</div>
                             <div class="text-[10px] text-slate-500 leading-tight">
                                 {{ $item->product?->sku ?? 'CUSTOM-MIX' }}
                                 @if ($item->product?->formattedPackage())
-                                    · {{ $item->product->formattedPackage() }}
+                                    - {{ $item->product->formattedPackage() }}
                                 @elseif ($item->product?->packageUnit)
-                                    · {{ $item->product->packageUnit->abbreviation }}
+                                    - {{ $item->product->packageUnit->abbreviation }}
                                 @endif
                             </div>
                         </td>
-                        <td class="py-1.5 text-center tabular-nums text-slate-700 whitespace-nowrap">
+                        <td class="py-1 text-center tabular-nums text-slate-700 whitespace-nowrap">
                             {{ rtrim(rtrim(number_format((float) $item->quantity, 2), '0'), '.') }}
                         </td>
-                        <td class="py-1.5 text-right tabular-nums text-slate-600 whitespace-nowrap">
-                            {{ \App\Support\Currency::format($item->unit_price) }}
+                        <td class="py-1 text-right tabular-nums text-slate-600 whitespace-nowrap">
+                            @if ((float) $item->unit_price > 0)
+                                {{ \App\Support\Currency::format($item->unit_price) }}
+                            @else
+                                <span class="text-slate-400 italic">Pending</span>
+                            @endif
                         </td>
-                        <td class="py-1.5 text-right tabular-nums font-bold text-slate-900 whitespace-nowrap">
-                            {{ \App\Support\Currency::format($item->subtotal) }}
+                        <td class="py-1 text-right tabular-nums text-slate-900 whitespace-nowrap">
+                            @if ((float) $item->subtotal > 0)
+                                {{ \App\Support\Currency::format($item->subtotal) }}
+                            @else
+                                <span class="text-slate-400 italic font-normal">Pending</span>
+                            @endif
                         </td>
                     </tr>
                 @endforeach
@@ -89,32 +104,40 @@
 
         <!-- Custom Mix Component Details (if present) -->
         @if ($sale->mixingTransaction)
-            <div class="mt-2.5 rounded border border-slate-200 bg-slate-50 p-2 text-[10px] print:border print:border-slate-300">
-                <div class="flex items-center justify-between font-bold text-slate-800 border-b border-slate-200 pb-1 mb-1">
-                    <span>Formula Specification</span>
-                    <span>Result: {{ number_format((float) $sale->mixingTransaction->resulting_quantity, 2) }} {{ $sale->mixingTransaction->resulting_unit }}</span>
+            <div class="mt-2 rounded text-[10px]">
+                <div class="flex items-center justify-between font-bold text-slate-800 mb-1">
+                    <span>Custom Mix Specification</span>
+                    <span>Output: {{ number_format((float) $sale->mixingTransaction->resulting_quantity, 2) }} {{ $sale->mixingTransaction->resulting_unit }}</span>
                 </div>
-                <div class="space-y-0.5 pl-1">
-                    @foreach ($sale->mixingTransaction->components as $comp)
-                        <div class="flex justify-between text-slate-600">
-                            <span>• {{ $comp->product?->name }}</span>
-                            <span class="font-mono">{{ number_format((float) $comp->estimated_quantity, 2) }} {{ $comp->estimated_quantity_unit }}</span>
-                        </div>
-                    @endforeach
+                <div class="grid grid-cols-2 gap-1 text-slate-700 mb-1.5">
+                    <div><span class="text-slate-500">Brand:</span> <strong>{{ $sale->mixingTransaction->brand?->name ?? '—' }}</strong></div>
                 </div>
+                @if ($sale->mixingTransaction->components->isNotEmpty())
+                    <div class="font-semibold text-slate-700 mb-0.5">Formula Materials Used:</div>
+                    <div class="space-y-0.5">
+                        @foreach ($sale->mixingTransaction->components as $comp)
+                            <div class="flex justify-between text-slate-600">
+                                <span>{{ $comp->product?->name }}</span>
+                                <span class="font-mono text-slate-500">{{ $comp->product?->sku ?? '' }}</span>
+                            </div>
+                        @endforeach
+                    </div>
+                @else
+                    <div class="text-slate-500 italic">Formula materials will be logged upon mixing preparation.</div>
+                @endif
             </div>
         @endif
 
         <!-- Financial Breakdown -->
-        <div class="mt-2.5 border-t border-dashed border-slate-300 pt-2 space-y-1 text-xs">
+        <div class="mt-2 border-t border-slate-200 pt-2 space-y-1 text-xs">
             <div class="flex justify-between text-slate-600">
                 <span>Subtotal:</span>
                 <span class="font-medium text-slate-900">{{ \App\Support\Currency::format($sale->subtotal) }}</span>
             </div>
 
-            @if ((float) $sale->discount_percentage > 0)
+            @if ((float) $sale->discount_percentage > 0 || (float) $sale->discount_amount > 0)
                 <div class="flex justify-between text-emerald-700 font-semibold">
-                    <span>Discount ({{ number_format((float) $sale->discount_percentage, 2) }}%{{ $sale->discount_type && $sale->discount_type !== 'none' ? ' · ' . ucfirst(str_replace('_', ' ', $sale->discount_type)) : '' }}):</span>
+                    <span>Discount ({{ number_format((float) $sale->discount_percentage, 2) }}%{{ $sale->discount_type && $sale->discount_type !== 'none' ? ' - ' . ucfirst(str_replace('_', ' ', $sale->discount_type)) : '' }}):</span>
                     <span>-{{ \App\Support\Currency::format($sale->discount_amount) }}</span>
                 </div>
                 @if ($sale->discount_reason)
@@ -127,10 +150,45 @@
                 @endif
             @endif
 
-            <div class="flex justify-between text-sm font-black text-slate-900 border-t border-slate-300 pt-1.5 pb-0.5">
-                <span>TOTAL DUE:</span>
-                <span>{{ \App\Support\Currency::format($sale->total) }}</span>
-            </div>
+            @if ($sale->mixingTransaction && in_array($sale->mixingTransaction->status, ['downpaid', 'pending_mix']))
+                <div class="flex justify-between text-sm font-bold text-slate-900 pt-1">
+                    <span>DOWNPAYMENT PAID:</span>
+                    <span>{{ \App\Support\Currency::format($sale->downpayment_amount) }}</span>
+                </div>
+                <div class="flex justify-between text-slate-600 text-[11px]">
+                    <span>Final Total &amp; Balance:</span>
+                    <span class="italic text-slate-500">Determined upon mixing</span>
+                </div>
+            @else
+                <div class="flex justify-between text-sm font-bold text-slate-900 pt-1">
+                    <span>TOTAL DUE:</span>
+                    <span>{{ \App\Support\Currency::format($sale->total) }}</span>
+                </div>
+
+                @if ((float) $sale->downpayment_amount > 0 || (float) $sale->balance_due > 0)
+                    <div class="flex justify-between text-slate-700">
+                        <span>Downpayment Paid:</span>
+                        <span class="font-mono font-medium">{{ \App\Support\Currency::format($sale->downpayment_amount) }}</span>
+                    </div>
+                    @if ((float) $sale->balance_due > 0)
+                        <div class="flex justify-between text-slate-900 font-semibold">
+                            <span>Balance Due:</span>
+                            <span class="font-mono font-bold">{{ \App\Support\Currency::format($sale->balance_due) }}</span>
+                        </div>
+                    @else
+                        <div class="flex justify-between text-slate-700">
+                            <span>Remaining Balance:</span>
+                            <span class="font-mono font-medium">₱0.00</span>
+                        </div>
+                    @endif
+                    <div class="flex justify-between text-slate-700">
+                        <span>Payment Status:</span>
+                        <span class=" text-slate-800">
+                            {{ str_replace('_', ' ', $sale->payment_status) }}
+                        </span>
+                    </div>
+                @endif
+            @endif
 
             <div class="flex justify-between text-slate-700">
                 <span>Cash Tendered:</span>
@@ -139,20 +197,13 @@
 
             <div class="flex justify-between text-slate-700">
                 <span>Change Due:</span>
-                <span class="font-mono font-bold text-slate-900">{{ \App\Support\Currency::format($sale->change_amount) }}</span>
+                <span class="font-mono  text-slate-900">{{ \App\Support\Currency::format($sale->change_amount) }}</span>
             </div>
 
             <div class="flex justify-between text-slate-500 text-[10px] pt-0.5">
                 <span>Payment Method:</span>
-                <span class="uppercase font-semibold text-slate-700">{{ $sale->payment_method ?? 'CASH' }}</span>
+                <span class="  text-slate-700">{{ $sale->payment_method ?? 'CASH' }}</span>
             </div>
-        </div>
-
-        <!-- Receipt Footer Note -->
-        <div class="mt-3 border-t border-dashed border-slate-300 pt-2.5 text-center text-[10px] text-slate-500 space-y-0.5">
-            <p class="font-medium text-slate-700">Thank you for shopping at Grade A Paint Center!</p>
-            <p>Please inspect goods upon release.</p>
-            <p class="text-[9px] text-slate-400 mt-1">Printed: {{ now()->format('Y-m-d H:i') }}</p>
         </div>
     </div>
 

@@ -15,7 +15,7 @@ test('dashboard hides today\'s sales card for mixer role', function () {
         ->assertDontSee("Today's Sales", false)
         ->assertSee('Low Stock')
         ->assertSee('Out of Stock')
-        ->assertSee('Catalog SKUs');
+        ->assertSee('Physical Check Queue');
 });
 
 test('dashboard displays today\'s sales card for admin and manager', function () {
@@ -27,7 +27,7 @@ test('dashboard displays today\'s sales card for admin and manager', function ()
         ->assertSee("Today's Sales", false)
         ->assertSee('Low Stock')
         ->assertSee('Out of Stock')
-        ->assertSee('Catalog SKUs');
+        ->assertSee('Physical Check Queue');
 });
 
 test('dashboard renders 7-day sales overview line graph and places stock alerts table above it', function () {
@@ -100,4 +100,25 @@ test('discounts given and inventory outflow do not have negative signs', functio
     $salesContent = $salesReportResponse->getContent();
     expect($salesContent)->toContain('Discounts Given')
         ->and($salesContent)->not->toContain('text-rose-700 mt-1 text-right">-');
+});
+
+test('dashboard renders stock alerts controls and 7-day sales cards with axis labels', function () {
+    $admin = User::factory()->create(['role' => 'admin']);
+
+    $response = $this->actingAs($admin)->get('/dashboard');
+    $response->assertOk();
+    $content = $response->getContent();
+
+    // Verify stock alerts filter layout and per page selector
+    expect($content)->toContain('Search product name or SKU...')
+        ->and($content)->toContain('All Statuses')
+        ->and($content)->toContain('lowStockPerPage')
+        ->and($content)->toContain('Showing')
+        ->and($content)->toContain('items');
+
+    // Verify 7-day sales overview cards on the right
+    expect($content)->toContain('7-Day Total Sales')
+        ->and($content)->toContain('Daily Average')
+        ->and($content)->toContain('Total Transactions')
+        ->and($content)->toContain('₱0');
 });

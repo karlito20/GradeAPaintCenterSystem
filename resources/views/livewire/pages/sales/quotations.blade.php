@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\AuditLog;
+use App\Models\Brand;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\Quotation;
 use App\Support\Currency;
@@ -18,12 +20,13 @@ new #[Layout('layouts.app')] class extends Component {
     public string $status = '';
     public string $dateFrom = '';
     public string $dateTo = '';
+    public int $perPage = 15;
 
     // Quotation detail modal
     public bool $showDetailModal = false;
     public ?int $viewingQuotationId = null;
 
-    // Quotation edit modal
+    // Quotation create/edit modal
     public bool $showEditModal = false;
     public ?int $editingQuotationId = null;
     public string $editCustomerName = '';
@@ -36,8 +39,10 @@ new #[Layout('layouts.app')] class extends Component {
     public string $editDiscountReason = '';
     public array $editItems = [];
 
-    // Product search inside edit modal
+    // Catalog selector inside modal
     public string $productSearch = '';
+    public string $catalogBrandId = '';
+    public string $catalogCategoryId = '';
     public array $productSearchResults = [];
 
     public function mount(): void
@@ -65,6 +70,11 @@ new #[Layout('layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    public function updatedPerPage(): void
+    {
+        $this->resetPage();
+    }
+
     public function resetFilters(): void
     {
         $this->reset(['search', 'status', 'dateFrom', 'dateTo']);
@@ -81,6 +91,25 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->showDetailModal = false;
         $this->viewingQuotationId = null;
+    }
+
+    public function openCreateModal(): void
+    {
+        $this->editingQuotationId = null;
+        $this->editCustomerName = '';
+        $this->editCustomerContact = '';
+        $this->editValidUntil = now()->addDays(7)->format('Y-m-d');
+        $this->editNotes = '';
+        $this->editStatus = 'draft';
+        $this->editDiscountPercentage = '0';
+        $this->editDiscountType = 'none';
+        $this->editDiscountReason = '';
+        $this->editItems = [];
+        $this->productSearch = '';
+        $this->catalogBrandId = '';
+        $this->catalogCategoryId = '';
+        $this->showDetailModal = false;
+        $this->showEditModal = true;
     }
 
     public function openEditModal(int $id): void
@@ -205,11 +234,9 @@ new #[Layout('layouts.app')] class extends Component {
     public function updatedEditItems(): void
     {
         foreach ($this->editItems as $index => $item) {
-            $qty = max(0.01, (float) ($item['quantity'] ?? 1));
-            $price = max(0, (float) ($item['unit_price'] ?? 0));
+            $qty = max(1, (float) ($item['quantity'] ?? 1));
             $this->editItems[$index]['quantity'] = $qty;
-            $this->editItems[$index]['unit_price'] = $price;
-            $this->editItems[$index]['subtotal'] = round($qty * $price, 2);
+            $this->editItems[$index]['subtotal'] = round($qty * (float) $item['unit_price'], 2);
         }
     }
 
@@ -243,8 +270,62 @@ new #[Layout('layouts.app')] class extends Component {
             'editItems.*.unit_price' => ['required', 'numeric', 'min:0'],
         ]);
 
-        if ((float) $this->editDiscountPercentage > 0 && empty($this->editDiscountReason)) {
-            $this->editDiscountReason = 'Customer Discount';
+        $subtotal = $this->editSubtotal;
+        $total = $subtotal;
+
+        if (! $this->editingQuotationId) {
+            $quote = DB::transaction(function () use ($subtotal, $total) {
+                $q = Quotation::create([
+                    'user_id' => auth()->id(),
+                    'quote_number' => 'QUO-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(4)),
+                    'customer_name' => trim($this->editCustomerName) ?: null,
+                    'customer_contact' => trim($this->editCustomerContact) ?: null,
+                    'valid_until' => $this->editValidUntil ?: now()->addDays(7),
+                    'notes' => trim($this->editNotes) ?: null,
+                    'status' => $this->editStatus ?: 'draft',
+                    'subtotal' => $subtotal,
+                    'discount_percentage' => 0.0,
+                    'discount_amount' => 0.0,
+                    'discount_type' => null,
+                    'discount_reason' => null,
+                    'discount_authorized_by' => null,
+                    'tax_rate' => 0.0,
+                    'tax_amount' => 0.0,
+                    'total' => $total,
+                ]);
+
+                foreach ($this->editItems as $item) {
+                    $q->items()->create([
+                        'product_id' => $item['product_id'] ?? null,
+                        'description' => $item['description'],
+                        'package' => $item['package'] ?? null,
+                        'sku' => $item['sku'] ?? null,
+                        'quantity' => (float) $item['quantity'],
+                        'unit_price' => (float) $item['unit_price'],
+                        'subtotal' => (float) $item['subtotal'],
+                        'mix_data' => $item['mix_data'] ?? null,
+                    ]);
+                }
+
+                AuditLog::create([
+                    'user_id' => auth()->id(),
+                    'event' => 'quotation_created',
+                    'auditable_type' => Quotation::class,
+                    'auditable_id' => $q->id,
+                    'context' => [
+                        'quote_number' => $q->quote_number,
+                        'customer' => $q->customer_name,
+                        'total' => $total,
+                        'items_count' => count($this->editItems),
+                    ],
+                ]);
+
+                return $q;
+            });
+
+            $this->dispatch('toast', ['type' => 'success', 'message' => "Quotation {$quote->quote_number} created successfully."]);
+            $this->closeEditModal();
+            return;
         }
 
         $quote = Quotation::findOrFail($this->editingQuotationId);
@@ -253,12 +334,7 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
-        $subtotal = $this->editSubtotal;
-        $discountPct = (float) $this->editDiscountPercentage;
-        $discountAmt = $this->editDiscountAmount;
-        $total = $this->editTotal;
-
-        DB::transaction(function () use ($quote, $subtotal, $discountPct, $discountAmt, $total) {
+        DB::transaction(function () use ($quote, $subtotal, $total) {
             $quote->update([
                 'customer_name' => trim($this->editCustomerName) ?: null,
                 'customer_contact' => trim($this->editCustomerContact) ?: null,
@@ -266,11 +342,11 @@ new #[Layout('layouts.app')] class extends Component {
                 'notes' => trim($this->editNotes) ?: null,
                 'status' => $this->editStatus,
                 'subtotal' => $subtotal,
-                'discount_percentage' => $discountPct,
-                'discount_amount' => $discountAmt,
-                'discount_type' => $discountPct > 0 ? $this->editDiscountType : null,
-                'discount_reason' => $discountPct > 0 ? trim($this->editDiscountReason) : null,
-                'discount_authorized_by' => (auth()->user()?->isManagerOrAbove() && $discountPct > 0) ? auth()->id() : $quote->discount_authorized_by,
+                'discount_percentage' => 0.0,
+                'discount_amount' => 0.0,
+                'discount_type' => null,
+                'discount_reason' => null,
+                'discount_authorized_by' => null,
                 'total' => $total,
             ]);
 
@@ -336,6 +412,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function convertToSale(int $id): void
     {
+        abort_unless(auth()->user()?->canAccessPos(), 403, 'Mixers cannot load quotations into POS for checkout.');
+
         $quote = Quotation::with('items.product.packageUnit')->findOrFail($id);
 
         if ($quote->isConverted()) {
@@ -416,11 +494,31 @@ new #[Layout('layouts.app')] class extends Component {
             'total_value' => (float) Quotation::whereNotIn('status', ['cancelled'])->sum('total'),
         ];
 
+        $catalogQuery = Product::query()
+            ->with(['brand', 'packageUnit', 'category', 'inventories'])
+            ->where('active', true)
+            ->when($this->productSearch, function ($q) {
+                $term = '%' . trim($this->productSearch) . '%';
+                $q->where(function ($sub) use ($term) {
+                    $sub->where('name', 'like', $term)
+                        ->orWhere('sku', 'like', $term);
+                });
+            })
+            ->when($this->catalogBrandId, fn($q) => $q->where('brand_id', $this->catalogBrandId))
+            ->when($this->catalogCategoryId, fn($q) => $q->where('category_id', $this->catalogCategoryId))
+            ->orderBy('name')
+            ->limit(10);
+
+        $catalogProducts = $this->showEditModal ? $catalogQuery->get() : collect();
+
         return view('livewire.pages.sales.quotations', [
-            'quotations' => $query->paginate(15),
+            'quotations' => $query->paginate($this->perPage),
             'selectedQuotation' => $selectedQuotation,
             'stats' => $stats,
             'currency' => Currency::class,
+            'brands' => Brand::where('active', true)->orderBy('name')->get(),
+            'categories' => Category::where('active', true)->orderBy('name')->get(),
+            'catalogProducts' => $catalogProducts,
         ]);
     }
 }; ?>
@@ -469,17 +567,16 @@ new #[Layout('layouts.app')] class extends Component {
     class="space-y-4 w-full min-w-0"
 >
     <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-300">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-300">
         <div>
-            <h1 class="font-heading text-xl font-bold tracking-tight text-slate-900">Quotations</h1>
-            <p class="text-[11px] text-slate-500 mt-0.5">Formal price quotes, specs, printable estimates, and cart conversions</p>
+            <h1 class="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Quotations</h1>
         </div>
         <div class="flex items-center gap-2">
-            <a href="{{ route('sales.index') }}" wire:navigate
+            <button wire:click="openCreateModal" type="button"
                 class="inline-flex items-center gap-1.5 rounded bg-[#00a3cc] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[#008fb3] transition">
                 <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                <span>New Quote (via POS)</span>
-            </a>
+                <span>Create Quotation</span>
+            </button>
         </div>
     </div>
 
@@ -503,19 +600,19 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
     </div>
 
-    <!-- Table Container with Horizontal Filter Bar Directly Above Table -->
-    <div class="rounded-lg border border-slate-300 bg-white shadow-xs overflow-hidden">
-        <!-- Horizontal Filter Bar -->
-        <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-2.5">
+    <!-- Table Section with Filter & Showing Count (space-y-2) -->
+    <div class="space-y-2">
+        <!-- Filter Controls Outside the Table Div -->
+        <div class="flex flex-wrap items-center gap-2.5">
             <!-- Search -->
-            <div class="flex-1 min-w-[200px]">
-                <input wire:model.live.debounce.250ms="search" type="search" placeholder="Search quote #, customer, contact, user..."
-                    class="w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+            <div class="w-64">
+                <input wire:model.live.debounce.250ms="search" type="search" placeholder="Search quote #, customer..."
+                    class="w-full h-9 rounded border border-slate-300 px-3 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
             </div>
 
             <!-- Status Filter -->
-            <div class="w-36">
-                <select wire:model.live="status" class="w-full rounded border-slate-300 px-2 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]">
+            <div class="w-40">
+                <select wire:model.live="status" class="w-full h-9 rounded border border-slate-300 bg-white pl-2.5 pr-8 text-xs text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="">All Statuses</option>
                     <option value="draft">Draft</option>
                     <option value="sent">Sent</option>
@@ -526,27 +623,56 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
 
             <!-- Date From -->
-            <div class="w-36">
-                <input wire:model.live="dateFrom" type="date" title="Created From"
-                    class="w-full rounded border-slate-300 px-2 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+            <div class="flex items-center gap-1.5">
+                <label for="quoteDateFrom" class="text-[10px] font-bold text-slate-500 uppercase">From:</label>
+                <input wire:model.live="dateFrom" id="quoteDateFrom" type="date" title="Created From"
+                    class="h-9 rounded border border-slate-300 bg-white px-2.5 text-xs text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
             </div>
 
             <!-- Date To -->
-            <div class="w-36">
-                <input wire:model.live="dateTo" type="date" title="Created To"
-                    class="w-full rounded border-slate-300 px-2 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+            <div class="flex items-center gap-1.5">
+                <label for="quoteDateTo" class="text-[10px] font-bold text-slate-500 uppercase">To:</label>
+                <input wire:model.live="dateTo" id="quoteDateTo" type="date" title="Created To"
+                    class="h-9 rounded border border-slate-300 bg-white px-2.5 text-xs text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
             </div>
 
             <!-- Reset Button -->
-            <button wire:click="resetFilters" type="button"
-                class="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition">
-                Reset
-            </button>
+            @if ($search || $status || $dateFrom || $dateTo)
+                <button wire:click="resetFilters" type="button"
+                    class="h-9 px-2 text-xs text-[#00a3cc] hover:text-[#008fb3] underline font-medium inline-flex items-center">
+                    Reset
+                </button>
+            @endif
         </div>
 
-        <!-- Table -->
-        <div class="overflow-x-auto">
-            <table class="w-full border-collapse border border-slate-300 text-xs">
+        <!-- Showing X of N Items Indicator & Per Page Selector -->
+        <div class="flex items-center justify-between text-xs text-slate-500">
+            <div>
+                @if ($quotations && $quotations->total() > 0)
+                    Showing <span class="font-medium text-slate-700">{{ $quotations->firstItem() }}</span> to
+                    <span class="font-medium text-slate-700">{{ $quotations->lastItem() }}</span> of <span
+                        class="font-medium text-slate-700">{{ $quotations->total() }}</span> items
+                @else
+                    Showing <span class="font-medium text-slate-700">0</span> items
+                @endif
+            </div>
+            <div class="flex items-center gap-1.5">
+                <label for="quotePerPage" class="text-xs text-slate-500">Show:</label>
+                <select wire:model.live="perPage" id="quotePerPage"
+                    class="h-8 w-16 rounded border border-slate-300 bg-white pl-2.5 pr-7 py-1 text-xs text-slate-700 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                </select>
+                <span class="text-xs text-slate-500">items</span>
+            </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
+            <div class="overflow-x-auto w-full">
+                <table class="w-full border-collapse border border-slate-300 text-xs">
                 <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                     <tr>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Quote #</th>
@@ -556,7 +682,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Total Due</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Valid Until</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Status</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap w-24">Actions</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap w-16">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200">
@@ -611,49 +737,18 @@ new #[Layout('layouts.app')] class extends Component {
                                 </span>
                             </td>
                             <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
-                                <div class="inline-flex items-center gap-1">
-                                    <button 
-                                        wire:click="viewDetails({{ $quote->id }})" 
-                                        type="button" 
-                                        class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition"
-                                        title="View Details"
-                                    >
-                                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                                    </button>
-
-                                    @if (! $quote->isConverted())
-                                        <button 
-                                            wire:click="openEditModal({{ $quote->id }})" 
-                                            type="button" 
-                                            class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition"
-                                            title="Edit Quotation"
-                                        >
-                                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                        </button>
-                                    @endif
-
-                                    <a 
-                                        href="{{ route('quotations.print', $quote->id) }}" 
-                                        target="_blank"
-                                        class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition"
-                                        title="Print Formal Quotation"
-                                    >
-                                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-                                    </a>
-
-                                    <button 
-                                        @click.stop="contextMenu.openFromButton($event, { id: {{ $quote->id }}, number: '{{ $quote->quote_number }}', status: '{{ $quote->status }}', canConvert: {{ !$quote->isConverted() && $quote->status !== 'cancelled' ? 'true' : 'false' }}, canEdit: {{ !$quote->isConverted() ? 'true' : 'false' }} })" 
-                                        type="button" 
-                                        class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
-                                        title="More Options"
-                                    >
-                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none" />
-                                            <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-                                            <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none" />
-                                        </svg>
-                                    </button>
-                                </div>
+                                <button 
+                                    @click.stop="contextMenu.openFromButton($event, { id: {{ $quote->id }}, number: '{{ $quote->quote_number }}', status: '{{ $quote->status }}', canConvert: {{ !$quote->isConverted() && $quote->status !== 'cancelled' ? 'true' : 'false' }}, canEdit: {{ !$quote->isConverted() ? 'true' : 'false' }} })" 
+                                    type="button" 
+                                    class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
+                                    title="Actions"
+                                >
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none" />
+                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                                        <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none" />
+                                    </svg>
+                                </button>
                             </td>
                         </tr>
                     @empty
@@ -668,10 +763,58 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
 
         @if ($quotations->hasPages())
-            <div class="border-t border-slate-300 px-3 py-2 bg-slate-50">
-                {{ $quotations->links() }}
+            <div class="px-3 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                <div>
+                    <span class="text-slate-500">
+                        Page <span class="font-medium text-slate-800">{{ $quotations->currentPage() }}</span> of
+                        <span class="font-medium text-slate-800">{{ $quotations->lastPage() }}</span>
+                    </span>
+                </div>
+                <div class="inline-flex items-center gap-1">
+                    @if ($quotations->onFirstPage())
+                        <span class="px-2 py-1 text-slate-300 cursor-not-allowed">Previous</span>
+                    @else
+                        <button wire:click="previousPage" type="button" class="px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded">Previous</button>
+                    @endif
+
+                    @php
+                        $cur = $quotations->currentPage();
+                        $last = $quotations->lastPage();
+                        $start = max(1, $cur - 2);
+                        $end = min($last, $cur + 2);
+                    @endphp
+
+                    @if ($start > 1)
+                        <button wire:click="gotoPage(1)" type="button" class="px-2 py-1 rounded text-slate-600 hover:bg-slate-100">1</button>
+                        @if ($start > 2)
+                            <span class="px-1 text-slate-400">...</span>
+                        @endif
+                    @endif
+
+                    @for ($p = $start; $p <= $end; $p++)
+                        @if ($p == $cur)
+                            <span class="px-2 py-1 rounded bg-slate-900 text-white font-medium">{{ $p }}</span>
+                        @else
+                            <button wire:click="gotoPage({{ $p }})" type="button" class="px-2 py-1 rounded text-slate-600 hover:bg-slate-100">{{ $p }}</button>
+                        @endif
+                    @endfor
+
+                    @if ($end < $last)
+                        @if ($end < $last - 1)
+                            <span class="px-1 text-slate-400">...</span>
+                        @endif
+                        <button wire:click="gotoPage({{ $last }})" type="button" class="px-2 py-1 rounded text-slate-600 hover:bg-slate-100">{{ $last }}</button>
+                    @endif
+
+                    @if ($quotations->hasMorePages())
+                        <button wire:click="nextPage" type="button" class="px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded">Next</button>
+                    @else
+                        <span class="px-2 py-1 text-slate-300 cursor-not-allowed">Next</span>
+                    @endif
+                </div>
             </div>
         @endif
+        </div>
     </div>
 
     <!-- Floating Context Menu -->
@@ -718,16 +861,18 @@ new #[Layout('layouts.app')] class extends Component {
             <span>Print Formal Quote</span>
         </a>
 
-        <template x-if="contextMenu.item?.canConvert">
-            <button 
-                @click="if (contextMenu.item) { $wire.convertToSale(contextMenu.item.id); contextMenu.close(); }"
-                type="button" 
-                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
-            >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-                <span>Load to POS Cart</span>
-            </button>
-        </template>
+        @if (auth()->user()?->canAccessPos())
+            <template x-if="contextMenu.item?.canConvert">
+                <button 
+                    @click="if (contextMenu.item) { $wire.convertToSale(contextMenu.item.id); contextMenu.close(); }"
+                    type="button" 
+                    class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
+                >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    <span>Load to POS Cart</span>
+                </button>
+            </template>
+        @endif
 
         <template x-if="contextMenu.item?.status === 'draft'">
             <button 
@@ -771,19 +916,7 @@ new #[Layout('layouts.app')] class extends Component {
                 <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 bg-slate-50">
                     <div class="flex items-center gap-3">
                         <span class="font-mono text-sm font-bold text-[#008fb3]">{{ $selectedQuotation->quote_number }}</span>
-                        @php
-                            $badgeStyle = match ($selectedQuotation->status) {
-                                'draft' => 'bg-slate-100 text-slate-700 border-slate-300',
-                                'sent' => 'bg-sky-50 text-sky-800 border-sky-300',
-                                'accepted' => 'bg-emerald-50 text-emerald-800 border-emerald-300',
-                                'expired' => 'bg-amber-50 text-amber-800 border-amber-300',
-                                'cancelled' => 'bg-rose-50 text-rose-800 border-rose-300',
-                                default => 'bg-slate-100 text-slate-700 border-slate-300',
-                            };
-                        @endphp
-                        <span class="inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded border {{ $badgeStyle }}">
-                            {{ $selectedQuotation->status }}
-                        </span>
+                      
                     </div>
                     <button wire:click="closeDetailModal" type="button" class="text-slate-400 hover:text-slate-700 text-xl font-bold p-1">
                         &times;
@@ -797,28 +930,12 @@ new #[Layout('layouts.app')] class extends Component {
                         <div>
                             <h2 class="text-lg font-black uppercase tracking-tight text-slate-900 font-heading">Grade A Paint Center</h2>
                             <p class="text-[11px] text-slate-600">Retail Paint, Tinting &amp; Painting Supplies</p>
-                            <p class="text-[10px] text-slate-400">Lapu-Lapu St., Agdao, Davao City · Contact: (082) 227-1234</p>
+                            <p class="text-[10px] text-slate-600">Lapu-Lapu St., Agdao, Davao City</p>
                         </div>
                         <div class="sm:text-right text-[11px] space-y-0.5">
                             <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Price Quotation</span>
-                            <p class="text-slate-600">Issued: <strong class="text-slate-900">{{ $selectedQuotation->created_at->format('M d, Y') }}</strong></p>
-                            <p class="text-slate-600">Valid Until: <strong class="text-slate-900">{{ $selectedQuotation->valid_until ? $selectedQuotation->valid_until->format('M d, Y') : '—' }}</strong></p>
-                        </div>
-                    </div>
-
-                    <!-- Client & Specification Meta -->
-                    <div class="grid grid-cols-2 gap-4 rounded-lg bg-slate-50 border border-slate-200 p-4">
-                        <div>
-                            <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">Prepared For</span>
-                            <p class="text-sm font-bold text-slate-900">{{ $selectedQuotation->customer_name ?: 'Walk-in / Valued Client' }}</p>
-                            @if ($selectedQuotation->customer_contact)
-                                <p class="text-slate-600 mt-0.5">{{ $selectedQuotation->customer_contact }}</p>
-                            @endif
-                        </div>
-                        <div class="text-right">
-                            <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">Issued By</span>
-                            <p class="font-bold text-slate-800">{{ $selectedQuotation->user?->name ?? 'Staff' }}</p>
-                            <p class="text-slate-500 text-[10px]">{{ ucfirst($selectedQuotation->user?->role ?? 'Personnel') }}</p>
+                            <p class="text-slate-600">Issued: {{ $selectedQuotation->created_at->format('M d, Y') }}</p>
+                            <p class="text-slate-600">Valid Until: {{ $selectedQuotation->valid_until ? $selectedQuotation->valid_until->format('M d, Y') : '—' }}</p>
                         </div>
                     </div>
 
@@ -882,7 +999,7 @@ new #[Layout('layouts.app')] class extends Component {
                             @endif
                         </div>
 
-                        <div class="w-full sm:w-72 rounded-lg bg-slate-50 border border-slate-200 p-3.5 space-y-2 tabular-nums text-xs">
+                        <div class="w-full sm:w-72 rounded-lg  p-3.5 space-y-2 tabular-nums text-xs">
                             <div class="flex justify-between text-slate-600">
                                 <span>Subtotal:</span>
                                 <span class="font-medium text-slate-900">{{ $currency::format($selectedQuotation->subtotal) }}</span>
@@ -890,7 +1007,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                             @if ((float) $selectedQuotation->discount_percentage > 0)
                                 <div class="flex justify-between text-emerald-700 font-semibold">
-                                    <span>Discount ({{ number_format((float) $selectedQuotation->discount_percentage, 2) }}%{{ $selectedQuotation->discount_type && $selectedQuotation->discount_type !== 'none' ? ' · ' . ucfirst(str_replace('_', ' ', $selectedQuotation->discount_type)) : '' }}):</span>
+                                    <span>Discount ({{ number_format((float) $selectedQuotation->discount_percentage, 2) }}%{{ $selectedQuotation->discount_type && $selectedQuotation->discount_type !== 'none' ? ' - ' . ucfirst(str_replace('_', ' ', $selectedQuotation->discount_type)) : '' }}):</span>
                                     <span>-{{ $currency::format($selectedQuotation->discount_amount) }}</span>
                                 </div>
                                 @if ($selectedQuotation->discount_reason)
@@ -932,9 +1049,9 @@ new #[Layout('layouts.app')] class extends Component {
                                 <span>Edit Quotation</span>
                             </button>
 
-                            @if ($selectedQuotation->status !== 'cancelled')
+                            @if ($selectedQuotation->status !== 'cancelled' && auth()->user()?->canAccessPos())
                                 <button wire:click="convertToSale({{ $selectedQuotation->id }})" type="button"
-                                    class="rounded bg-[#00a3cc] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#008fb3] transition shadow-xs">
+                                    class="px-4 py-1.5 rounded bg-[#00a3cc] text-white text-xs font-semibold hover:bg-[#008fb3] transition shadow-xs">
                                     Load to POS Cart
                                 </button>
                             @endif
@@ -948,12 +1065,11 @@ new #[Layout('layouts.app')] class extends Component {
     <!-- Comprehensive Edit Quotation Modal -->
     @if ($showEditModal)
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-            <div class="w-full max-w-4xl rounded-xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="w-full max-w-6xl rounded-xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
                 <!-- Modal Header -->
-                <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 bg-slate-50">
+                <div class="flex items-center justify-between border-b border-slate-200 px-5 bg-slate-50">
                     <div>
-                        <h2 class="text-sm font-bold text-slate-900">Edit Price Quotation</h2>
-                        <p class="text-xs text-slate-500">Modify customer information, validity, line items, and discount settings</p>
+                        <h2 class="text-sm font-bold text-slate-900">{{ $editingQuotationId ? 'Edit Price Quotation' : 'Create New Quotation' }}</h2>
                     </div>
                     <button wire:click="closeEditModal" type="button" class="text-slate-400 hover:text-slate-700 text-xl font-bold p-1">
                         &times;
@@ -991,39 +1107,95 @@ new #[Layout('layouts.app')] class extends Component {
                         </div>
                     </div>
 
-                    <!-- Items Management Section -->
-                    <div class="space-y-2">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <h3 class="font-bold text-xs uppercase tracking-wider text-slate-800">Quotation Line Items</h3>
-                            
-                            <!-- Search & Add Product -->
-                            <div class="relative w-full sm:w-80">
-                                <input wire:model.live.debounce.250ms="productSearch" type="search" placeholder="+ Search product by name or SKU to add..."
-                                    class="w-full rounded border-slate-300 px-2.5 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
-
-                                @if (!empty($productSearchResults))
-                                    <div class="absolute left-0 right-0 top-full mt-1 bg-white rounded border border-slate-200 shadow-xl z-20 max-h-48 overflow-y-auto">
-                                        @foreach ($productSearchResults as $result)
-                                            <button wire:click="addProductToEdit({{ $result['id'] }})" type="button"
-                                                class="w-full text-left px-3 py-1.5 text-xs hover:bg-cyan-50 flex items-center justify-between border-b border-slate-100 last:border-b-0">
-                                                <div>
-                                                    <span class="font-medium text-slate-900">{{ $result['name'] }}</span>
-                                                    <span class="text-[10px] text-slate-500 block">{{ $result['sku'] }} · {{ $result['brand'] }} ({{ $result['package'] }})</span>
-                                                </div>
-                                                <span class="font-bold text-slate-800 tabular-nums">{{ $currency::format($result['price']) }}</span>
-                                            </button>
+                    <!-- Product Catalog Selector Section -->
+                    <div class="">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                            <div>
+                                <h3 class="font-heading font-bold text-xs uppercase tracking-wider text-slate-900">Select Products from Catalog</h3>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <!-- Search -->
+                                <div class="w-44 sm:w-52">
+                                    <input wire:model.live.debounce.250ms="productSearch" type="search" placeholder="Search name or SKU..."
+                                        class="w-full h-8 rounded border border-slate-300 px-2.5 text-xs bg-white text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                                </div>
+                                <!-- Brand -->
+                                <div class="w-32">
+                                    <select wire:model.live="catalogBrandId" class="w-full h-8 rounded border border-slate-300 bg-white pl-2 pr-6 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]">
+                                        <option value="">All Brands</option>
+                                        @foreach ($brands as $b)
+                                            <option value="{{ $b->id }}">{{ $b->name }}</option>
                                         @endforeach
-                                    </div>
-                                @endif
+                                    </select>
+                                </div>
+                                <!-- Category -->
+                                <div class="w-32">
+                                    <select wire:model.live="catalogCategoryId" class="w-full h-8 rounded border border-slate-300 bg-white pl-2 pr-6 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]">
+                                        <option value="">All Categories</option>
+                                        @foreach ($categories as $c)
+                                            <option value="{{ $c->id }}">{{ $c->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Editable Items Table -->
+                        <!-- Catalog Items Table -->
+                        <div class="overflow-x-auto max-h-52 overflow-y-auto border border-slate-200 rounded">
+                            <table class="w-full border-collapse text-xs">
+                                <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-200 sticky top-0 z-10">
+                                    <tr>
+                                        <th class="px-2.5 py-1.5 text-left w-24">SKU</th>
+                                        <th class="px-2.5 py-1.5 text-left">Product Name</th>
+                                        <th class="px-2.5 py-1.5 text-left w-28">Brand</th>
+                                        <th class="px-2.5 py-1.5 text-left w-24">Package</th>
+                                        <th class="px-2.5 py-1.5 text-right w-24">Price</th>
+                                        <th class="px-2.5 py-1.5 text-center w-20">Stock</th>
+                                        <th class="px-2.5 py-1.5 text-center w-20">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    @forelse ($catalogProducts as $cp)
+                                        <tr class="hover:bg-cyan-50/40 transition-colors">
+                                            <td class="px-2.5 py-1.5 font-mono text-[11px] text-slate-600">{{ $cp->sku }}</td>
+                                            <td class="px-2.5 py-1.5 font-semibold text-slate-900">{{ $cp->name }}</td>
+                                            <td class="px-2.5 py-1.5 text-slate-600">{{ $cp->brand?->name ?? '—' }}</td>
+                                            <td class="px-2.5 py-1.5 text-slate-600">{{ $cp->formattedPackage() }}</td>
+                                            <td class="px-2.5 py-1.5 text-right font-medium text-slate-900 tabular-nums">{{ $currency::format($cp->selling_price) }}</td>
+                                            <td class="px-2.5 py-1.5 text-center tabular-nums text-slate-600">{{ number_format($cp->getTotalAvailableStock(), 1) }}</td>
+                                            <td class="px-2.5 py-1.5 text-center">
+                                                <button wire:click="addProductToEdit({{ $cp->id }})" type="button"
+                                                    class="inline-flex items-center gap-1 rounded bg-[#00a3cc] px-2 py-0.5 text-[11px] font-bold text-white hover:bg-[#008fb3] transition shadow-xs">
+                                                    + Add
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7" class="px-3 py-6 text-center text-slate-400">
+                                                No products match your catalog filters.
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Items Management Section -->
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <h3 class="font-bold text-xs uppercase tracking-wider text-slate-800">
+                                Quotation Line Items ({{ count($editItems) }})
+                            </h3>
+                        </div>
+
+                        <!-- Non-Arbitrary Items Table (Read-only details, editable quantity) -->
                         <div class="overflow-x-auto rounded border border-slate-200">
                             <table class="w-full border-collapse text-xs">
                                 <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-200">
                                     <tr>
-                                        <th class="px-2.5 py-2 text-left w-20">SKU</th>
+                                        <th class="px-2.5 py-2 text-left w-24">SKU</th>
                                         <th class="px-2.5 py-2 text-left">Description</th>
                                         <th class="px-2.5 py-2 text-left w-24">Spec/Package</th>
                                         <th class="px-2.5 py-2 text-center w-24">Qty</th>
@@ -1035,28 +1207,26 @@ new #[Layout('layouts.app')] class extends Component {
                                 <tbody class="divide-y divide-slate-100">
                                     @forelse ($editItems as $index => $item)
                                         <tr class="hover:bg-slate-50/50">
-                                            <td class="px-2.5 py-1.5 font-mono text-[11px] text-slate-600">
+                                            <td class="px-2.5 py-2 font-mono text-[11px] text-slate-600">
                                                 {{ $item['sku'] }}
                                             </td>
-                                            <td class="px-2.5 py-1.5">
-                                                <input wire:model="editItems.{{ $index }}.description" type="text"
-                                                    class="w-full rounded border-slate-300 px-2 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                                            <td class="px-2.5 py-2 font-semibold text-slate-900">
+                                                {{ $item['description'] }}
                                             </td>
-                                            <td class="px-2.5 py-1.5 text-slate-600">
+                                            <td class="px-2.5 py-2 text-slate-600">
                                                 {{ $item['package'] }}
                                             </td>
-                                            <td class="px-2.5 py-1.5 text-center">
-                                                <input wire:model.live="editItems.{{ $index }}.quantity" type="number" step="0.01" min="0.01"
-                                                    class="w-20 text-center rounded border-slate-300 px-1.5 py-1 text-xs tabular-nums text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                                            <td class="px-2.5 py-2 text-center">
+                                                <input wire:model.live.debounce.250ms="editItems.{{ $index }}.quantity" type="number" step="1" min="1"
+                                                    class="w-20 text-center rounded border border-slate-300 px-1.5 py-1 text-xs tabular-nums text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
                                             </td>
-                                            <td class="px-2.5 py-1.5 text-right">
-                                                <input wire:model.live="editItems.{{ $index }}.unit_price" type="number" step="0.01" min="0"
-                                                    class="w-24 text-right rounded border-slate-300 px-1.5 py-1 text-xs tabular-nums text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                                            <td class="px-2.5 py-2 text-right font-medium text-slate-700 tabular-nums">
+                                                {{ $currency::format($item['unit_price']) }}
                                             </td>
-                                            <td class="px-2.5 py-1.5 text-right font-bold text-slate-900 tabular-nums">
+                                            <td class="px-2.5 py-2 text-right font-bold text-slate-900 tabular-nums">
                                                 {{ $currency::format($item['subtotal']) }}
                                             </td>
-                                            <td class="px-2.5 py-1.5 text-center">
+                                            <td class="px-2.5 py-2 text-center">
                                                 <button wire:click="removeEditItem({{ $index }})" type="button"
                                                     class="inline-flex items-center justify-center h-6 w-6 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition" title="Remove Item">
                                                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -1066,7 +1236,7 @@ new #[Layout('layouts.app')] class extends Component {
                                     @empty
                                         <tr>
                                             <td colspan="7" class="px-4 py-6 text-center text-slate-400">
-                                                No items in this quotation. Search above to add items.
+                                                No items in this quotation. Search and add products above.
                                             </td>
                                         </tr>
                                     @endforelse
@@ -1075,59 +1245,24 @@ new #[Layout('layouts.app')] class extends Component {
                         </div>
                     </div>
 
-                    <!-- Notes, Discount, and Totals Section -->
+                    <!-- Notes and Totals Section (No discounts in quotation modal) -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                         <!-- Notes & Terms -->
                         <div class="space-y-1">
                             <label class="block text-[11px] font-semibold text-slate-700">Quotation Notes &amp; Terms</label>
-                            <textarea wire:model="editNotes" rows="4" placeholder="Enter special terms, delivery notes, or payment conditions..."
+                            <textarea wire:model="editNotes" rows="3" placeholder="Enter special terms, delivery notes, or payment conditions..."
                                 class="w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]"></textarea>
                         </div>
 
-                        <!-- Discount & Financial Calculation -->
-                        <div class="rounded-lg bg-slate-50 border border-slate-200 p-3.5 space-y-2.5">
-                            <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="block text-[10px] font-semibold text-slate-600 mb-0.5">Discount Type</label>
-                                    <select wire:model.live="editDiscountType"
-                                        class="w-full rounded border-slate-300 px-2 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]">
-                                        <option value="none">None</option>
-                                        <option value="percentage">Standard %</option>
-                                        <option value="senior_pwd">Senior / PWD (5%)</option>
-                                        <option value="wholesale">Wholesale / Volume</option>
-                                        <option value="special">Special Quotation</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-semibold text-slate-600 mb-0.5">Discount %</label>
-                                    <input wire:model.live="editDiscountPercentage" type="number" step="0.5" min="0" max="100"
-                                        class="w-full rounded border-slate-300 px-2 py-1 text-xs tabular-nums text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
-                                </div>
+                        <!-- Financial Calculation (Subtotal = Total, no discounts) -->
+                        <div class=" p-3.5 space-y-2 tabular-nums text-xs flex flex-col justify-between">
+                            <div class="flex justify-between text-slate-600">
+                                <span class="font-sans font-normal">Quotation Items Subtotal:</span>
+                                <span class="font-medium text-slate-900">{{ $currency::format($this->editSubtotal) }}</span>
                             </div>
-
-                            @if ((float) $editDiscountPercentage > 0)
-                                <div>
-                                    <label class="block text-[10px] font-semibold text-slate-600 mb-0.5">Discount Justification / Reason</label>
-                                    <input wire:model="editDiscountReason" type="text" placeholder="e.g. Contractor volume discount"
-                                        class="w-full rounded border-slate-300 px-2 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
-                                </div>
-                            @endif
-
-                            <div class="border-t border-slate-200 pt-2 space-y-1 text-xs tabular-nums">
-                                <div class="flex justify-between text-slate-600">
-                                    <span>Subtotal:</span>
-                                    <span class="font-medium text-slate-900">{{ $currency::format($this->editSubtotal) }}</span>
-                                </div>
-                                @if ((float) $editDiscountPercentage > 0)
-                                    <div class="flex justify-between text-emerald-700 font-semibold">
-                                        <span>Discount:</span>
-                                        <span>-{{ $currency::format($this->editDiscountAmount) }}</span>
-                                    </div>
-                                @endif
-                                <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-1.5">
-                                    <span>Quotation Total:</span>
-                                    <span class="text-base text-slate-900">{{ $currency::format($this->editTotal) }}</span>
-                                </div>
+                            <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-2">
+                                <span class="font-sans font-bold">Total Quoted Amount:</span>
+                                <span class="text-base font-black text-slate-900">{{ $currency::format($this->editSubtotal) }}</span>
                             </div>
                         </div>
                     </div>
@@ -1141,8 +1276,8 @@ new #[Layout('layouts.app')] class extends Component {
                     </button>
 
                     <button wire:click="saveQuotationChanges" type="button" wire:loading.attr="disabled"
-                        class="rounded bg-[#00a3cc] px-5 py-1.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#008fb3] transition shadow-xs">
-                        <span wire:loading.remove wire:target="saveQuotationChanges">Save Changes</span>
+                        class="px-4 py-1.5 rounded bg-[#00a3cc] text-white text-xs font-semibold hover:bg-[#008fb3] transition shadow-xs">
+                        <span wire:loading.remove wire:target="saveQuotationChanges">{{ $editingQuotationId ? 'Save Changes' : 'Create Quotation' }}</span>
                         <span wire:loading wire:target="saveQuotationChanges">Saving...</span>
                     </button>
                 </div>

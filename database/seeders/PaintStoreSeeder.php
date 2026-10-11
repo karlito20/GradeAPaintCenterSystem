@@ -65,10 +65,9 @@ class PaintStoreSeeder extends Seeder
 
         $categories = [];
         foreach ($categoriesData as $c) {
-            $isMixing = ($c === 'Tinting Colors');
             $cat = Category::updateOrCreate(
                 ['name' => $c],
-                ['active' => true, 'is_for_mixing' => $isMixing]
+                ['active' => true]
             );
             $categories[$c] = $cat->id;
         }

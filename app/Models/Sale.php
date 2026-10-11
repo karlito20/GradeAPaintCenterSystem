@@ -29,6 +29,9 @@ class Sale extends Model
         'discount_type',
         'discount_reason',
         'discount_authorized_by',
+        'downpayment_amount',
+        'balance_due',
+        'payment_status',
     ];
 
     protected function casts(): array
@@ -43,6 +46,8 @@ class Sale extends Model
             'total' => 'decimal:2',
             'payment_amount' => 'decimal:2',
             'change_amount' => 'decimal:2',
+            'downpayment_amount' => 'decimal:2',
+            'balance_due' => 'decimal:2',
         ];
     }
 

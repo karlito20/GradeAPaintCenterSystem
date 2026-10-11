@@ -23,7 +23,7 @@ class InventoryReportController extends Controller
         $to = $request->query('to');
 
         $query = Product::query()
-            ->with(['brand', 'category', 'packageUnit', 'inventory'])
+            ->with(['brand', 'category', 'packageUnit', 'inventories'])
             ->where('active', true)
             ->when(! empty($search), function ($q) use ($search) {
                 $term = '%'.trim($search).'%';
@@ -41,17 +41,17 @@ class InventoryReportController extends Controller
         // Stock status filtering
         if ($stockStatus === 'low') {
             $products = $products->filter(function (Product $p): bool {
-                $qty = (float) ($p->inventory?->quantity ?? 0);
+                $qty = (float) ($p->inventories->sum('quantity') ?? 0);
 
                 return $qty > 0 && $qty <= (float) $p->low_stock_threshold;
             });
         } elseif ($stockStatus === 'out') {
             $products = $products->filter(function (Product $p): bool {
-                return (float) ($p->inventory?->quantity ?? 0) <= 0;
+                return (float) ($p->inventories->sum('quantity') ?? 0) <= 0;
             });
         } elseif ($stockStatus === 'healthy') {
             $products = $products->filter(function (Product $p): bool {
-                return (float) ($p->inventory?->quantity ?? 0) > (float) $p->low_stock_threshold;
+                return (float) ($p->inventories->sum('quantity') ?? 0) > (float) $p->low_stock_threshold;
             });
         }
 
@@ -61,12 +61,12 @@ class InventoryReportController extends Controller
 
         // Calculate movements summary in single query
         $movementsData = InventoryMovement::query()
-            ->selectRaw('
+            ->selectRaw("
                 product_id,
                 SUM(CASE WHEN created_at > ? THEN quantity_change ELSE 0 END) as after_to,
-                SUM(CASE WHEN created_at >= ? AND created_at <= ? AND quantity_change > 0 THEN quantity_change ELSE 0 END) as period_in,
-                SUM(CASE WHEN created_at >= ? AND created_at <= ? AND quantity_change < 0 THEN ABS(quantity_change) ELSE 0 END) as period_out
-            ', [$toEnd, $fromStart, $toEnd, $fromStart, $toEnd])
+                SUM(CASE WHEN created_at >= ? AND created_at <= ? AND type NOT IN ('transfer_in', 'transfer_out') AND quantity_change > 0 THEN quantity_change ELSE 0 END) as period_in,
+                SUM(CASE WHEN created_at >= ? AND created_at <= ? AND type NOT IN ('transfer_in', 'transfer_out') AND quantity_change < 0 THEN ABS(quantity_change) ELSE 0 END) as period_out
+            ", [$toEnd, $fromStart, $toEnd, $fromStart, $toEnd])
             ->groupBy('product_id')
             ->get()
             ->keyBy('product_id');
@@ -74,7 +74,7 @@ class InventoryReportController extends Controller
         // Attach balance figures to each product
         $reportItems = $products->map(function (Product $p) use ($movementsData) {
             $mv = $movementsData->get($p->id);
-            $current = (float) ($p->inventory?->quantity ?? 0);
+            $current = (float) ($p->inventories->sum('quantity') ?? 0);
             $afterTo = $mv ? (float) $mv->after_to : 0.0;
             $stockIn = $mv ? (float) $mv->period_in : 0.0;
             $stockOut = $mv ? (float) $mv->period_out : 0.0;

@@ -3,6 +3,7 @@
 use App\Models\AuditLog;
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\Container;
 use App\Models\Inventory;
 use App\Models\InventoryMovement;
 use App\Models\PackageUnit;
@@ -12,7 +13,7 @@ use App\Models\User;
 use Livewire\Volt\Volt;
 
 test('checkout processes cash sale with discount, decrements stock, and logs movements and audits', function () {
-    $user = User::factory()->create(['role' => 'manager']);
+    $user = User::factory()->create(['role' => 'admin']);
     $brand = Brand::create(['name' => 'Boysen', 'active' => true]);
     $category = Category::create(['name' => 'Permacoat Latex', 'active' => true]);
     $unit = PackageUnit::create(['name' => 'Gallon', 'abbreviation' => 'gal', 'active' => true]);
@@ -29,7 +30,19 @@ test('checkout processes cash sale with discount, decrements stock, and logs mov
         'active' => true,
     ]);
 
-    Inventory::create(['product_id' => $product->id, 'quantity' => 10.0]);
+    Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 10.0]);
+
+    // Create 2 containers for checkout to consume
+    for ($i = 0; $i < 2; $i++) {
+        Container::create([
+            'product_id' => $product->id,
+            'location' => 'storefront',
+            'identifier' => 'TEST-BOY-GAL-'.($i + 1),
+            'capacity' => 4.0,
+            'current_quantity' => 4.0,
+            'is_sealed' => true,
+        ]);
+    }
 
     session([
         'pos.cart' => [
@@ -67,7 +80,7 @@ test('checkout processes cash sale with discount, decrements stock, and logs mov
         ->and((float) $sale->change_amount)->toBe(200.00);
 
     // Verify inventory decremented
-    expect((float) $product->fresh()->inventory->quantity)->toBe(8.0);
+    expect((float) $product->fresh()->getInventory('storefront')->quantity)->toBe(8.0);
 
     // Verify negative movement logged
     $movement = InventoryMovement::where('product_id', $product->id)->where('type', 'sale')->first();
