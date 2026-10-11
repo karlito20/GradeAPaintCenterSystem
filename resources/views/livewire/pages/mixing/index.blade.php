@@ -24,8 +24,15 @@ new #[Layout('layouts.app')] class extends Component {
         }
         $validated = $this->validate([
             'productId' => ['required', 'integer', Rule::exists('products', 'id')],
-            'estimatedQuantity' => ['required', 'numeric', 'gt:0'],
+            'estimatedQuantity' => ['required', 'numeric', 'gt:0', 'max:99999.99'],
             'estimatedQuantityUnit' => ['required', 'string', 'max:30'],
+        ], [
+            'productId.required' => 'Please select a material.',
+            'estimatedQuantity.required' => 'Quantity is required.',
+            'estimatedQuantity.numeric' => 'Quantity must be a valid number.',
+            'estimatedQuantity.gt' => 'Quantity must be greater than zero.',
+            'estimatedQuantity.max' => 'Quantity cannot exceed 99,999.99.',
+            'estimatedQuantityUnit.required' => 'Unit is required.',
         ]);
 
         $product = Product::with(['packageUnit', 'category'])->find($this->productId);
@@ -108,7 +115,7 @@ new #[Layout('layouts.app')] class extends Component {
 
             <div>
                 <label for="estimatedQuantity" class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">Estimated Qty</label>
-                <input wire:model="estimatedQuantity" id="estimatedQuantity" type="number" step="0.01" placeholder="e.g. 0.50" class="w-full rounded border-slate-300 text-xs font-mono tabular-nums focus:border-slate-500 focus:ring-slate-500" />
+                <input wire:model="estimatedQuantity" id="estimatedQuantity" type="number" step="0.01" min="0.01" max="99999.99" inputmode="decimal" x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()" placeholder="e.g. 0.50" class="w-full rounded border-slate-300 text-xs font-mono tabular-nums focus:border-slate-500 focus:ring-slate-500" />
                 <x-input-error :messages="$errors->get('estimatedQuantity')" class="mt-1" />
             </div>
 
@@ -128,6 +135,8 @@ new #[Layout('layouts.app')] class extends Component {
                 Add Material
             </button>
         </div>
+
+        <x-input-error :messages="$errors->get('components')" class="mt-1" />
 
         <div class="overflow-hidden rounded-lg border border-slate-300 bg-white">
             <div class="overflow-x-auto w-full">
@@ -172,6 +181,7 @@ new #[Layout('layouts.app')] class extends Component {
         <div class="border-t border-slate-200 pt-3">
             <label for="notes" class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">Mixing Formula Notes</label>
             <textarea wire:model="notes" id="notes" rows="2" placeholder="e.g. 50% primer base + 250ml tinting black..." class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-slate-500"></textarea>
+            <x-input-error :messages="$errors->get('notes')" class="mt-1" />
         </div>
 
         <div class="flex justify-end pt-2 border-t border-slate-200">

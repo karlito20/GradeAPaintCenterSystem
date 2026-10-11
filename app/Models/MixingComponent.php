@@ -7,16 +7,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MixingComponent extends Model
 {
-    protected $fillable = ['mixing_transaction_id', 'product_id', 'container_id'];
+    protected $fillable = ['mixing_transaction_id', 'product_id'];
 
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
-    }
-
-    public function container(): BelongsTo
-    {
-        return $this->belongsTo(Container::class);
     }
 
     public function mixingTransaction(): BelongsTo

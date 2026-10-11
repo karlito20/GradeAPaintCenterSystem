@@ -168,22 +168,29 @@ new #[Layout('layouts.app')] class extends Component {
 
         $validated = $this->validate(
             [
-                'sku' => ['required', 'string', 'max:100', Rule::unique('products', 'sku')->ignore($this->editingProductId)],
+                'sku' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z0-9\-_.]+$/', Rule::unique('products', 'sku')->ignore($this->editingProductId)],
                 'name' => ['required', 'string', 'max:255'],
                 'categoryIdInput' => ['required', 'integer', Rule::exists('categories', 'id')],
                 'brandIdInput' => ['nullable', 'integer', Rule::exists('brands', 'id')],
                 'packageUnitId' => ['required', 'integer', Rule::exists('package_units', 'id')],
-                'packageSize' => ['nullable', 'numeric', 'min:0'],
-                'sellingPrice' => ['required', 'numeric', 'min:0'],
-                'lowStockThreshold' => ['required', 'numeric', 'min:0'],
+                'packageSize' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
+                'sellingPrice' => ['required', 'numeric', 'min:0', 'max:999999.99'],
+                'lowStockThreshold' => ['required', 'numeric', 'min:0', 'max:99999.99'],
                 'manufacturerCode' => ['nullable', 'string', 'max:100'],
                 'description' => ['nullable', 'string', 'max:1000'],
             ],
             [
+                'sku.regex' => 'SKU can only contain letters, numbers, hyphens, underscores, and dots.',
                 'categoryIdInput.required' => 'Please select a product category.',
                 'packageUnitId.required' => 'Please select a package unit.',
+                'packageSize.numeric' => 'Package size must be a valid number.',
+                'packageSize.max' => 'Package size cannot exceed 99,999.99.',
+                'sellingPrice.numeric' => 'Selling price must be a valid number.',
                 'sellingPrice.min' => 'Price cannot be negative.',
+                'sellingPrice.max' => 'Price cannot exceed 999,999.99.',
+                'lowStockThreshold.numeric' => 'Threshold must be a valid number.',
                 'lowStockThreshold.min' => 'Threshold cannot be negative.',
+                'lowStockThreshold.max' => 'Threshold cannot exceed 99,999.99.',
             ],
         );
 
@@ -321,12 +328,6 @@ new #[Layout('layouts.app')] class extends Component {
             \App\Models\PhysicalInventoryItem::where('product_id', $product->id)->delete();
             \App\Models\Inventory::where('product_id', $product->id)->delete();
             \App\Models\PurchaseOrderItem::where('product_id', $product->id)->delete();
-            if (\Illuminate\Support\Facades\Schema::hasTable('containers')) {
-                \App\Models\Container::where('product_id', $product->id)->delete();
-            }
-            if (\Illuminate\Support\Facades\Schema::hasTable('inventory_transfers')) {
-                \App\Models\InventoryTransfer::where('product_id', $product->id)->delete();
-            }
             $product->delete();
         });
 
@@ -387,8 +388,12 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $inventoryService = $inventoryService ?? app(\App\Services\InventoryService::class);
         $this->validate([
-            'transferQuantity' => ['required', 'numeric', 'gt:0'],
+            'transferQuantity' => ['required', 'numeric', 'gt:0', 'max:999999.99'],
             'transferNotes' => ['nullable', 'string', 'max:500'],
+        ], [
+            'transferQuantity.numeric' => 'Transfer quantity must be a valid number.',
+            'transferQuantity.gt' => 'Transfer quantity must be greater than zero.',
+            'transferQuantity.max' => 'Transfer quantity cannot exceed 999,999.99.',
         ]);
 
         if ((float) $this->transferQuantity > $this->transferStorageStock) {
@@ -401,7 +406,6 @@ new #[Layout('layouts.app')] class extends Component {
             'storage',
             'storefront',
             (float) $this->transferQuantity,
-            null,
             auth()->id(),
             $this->transferNotes ?: 'Transferred from Storage to Storefront'
         );
@@ -975,9 +979,14 @@ new #[Layout('layouts.app')] class extends Component {
                             <div>
                                 <label for="packageSize" class="block font-semibold text-slate-700 mb-1">Package
                                     Size</label>
-                                <input wire:model="packageSize" id="packageSize" type="number" step="0.01"
+                                <input wire:model="packageSize" id="packageSize" type="number" step="0.01" min="0" max="99999.99"
+                                    inputmode="decimal"
+                                    x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                     placeholder="e.g. 4.0"
                                     class="w-full rounded border-slate-300 text-xs py-2 px-2.5 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+                                @error('packageSize')
+                                    <p class="text-rose-600 text-[11px] mt-0.5">{{ $message }}</p>
+                                @enderror
                             </div>
                         </div>
                     </div>
@@ -992,7 +1001,8 @@ new #[Layout('layouts.app')] class extends Component {
                                     Retail Price (₱) <span class="text-rose-600">*</span>
                                 </label>
                                 <input wire:model="sellingPrice" id="sellingPrice" type="number" step="0.01"
-                                    min="0" placeholder="0.00"
+                                    min="0" max="999999.99" placeholder="0.00" inputmode="decimal"
+                                    x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                     class="w-full rounded border-slate-300 text-xs py-2 px-2.5 tabular-nums focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
                                 @error('sellingPrice')
                                     <p class="text-rose-600 text-[11px] mt-0.5">{{ $message }}</p>
@@ -1004,8 +1014,12 @@ new #[Layout('layouts.app')] class extends Component {
                                     Low Stock Threshold <span class="text-rose-600">*</span>
                                 </label>
                                 <input wire:model="lowStockThreshold" id="lowStockThreshold" type="number"
-                                    step="0.01" min="0"
+                                    step="0.01" min="0" max="99999.99" inputmode="decimal"
+                                    x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                     class="w-full rounded border-slate-300 text-xs py-2 px-2.5 tabular-nums focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+                                @error('lowStockThreshold')
+                                    <p class="text-rose-600 text-[11px] mt-0.5">{{ $message }}</p>
+                                @enderror
                             </div>
                         </div>
                     </div>
@@ -1090,6 +1104,8 @@ new #[Layout('layouts.app')] class extends Component {
                             Transfer Quantity ({{ $transferProductModel->packageUnit?->abbreviation ?? 'units' }}) <span class="text-rose-500">*</span>
                         </label>
                         <input wire:model="transferQuantity" id="transferQuantity" type="number" step="0.01" min="0.01" max="{{ $transferStorageStock }}"
+                            inputmode="decimal"
+                            x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                             placeholder="0.00"
                             class="w-full rounded border border-slate-300 text-xs py-2 px-2.5 tabular-nums focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
                         @error('transferQuantity')

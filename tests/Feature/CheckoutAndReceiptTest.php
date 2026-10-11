@@ -3,9 +3,9 @@
 use App\Models\AuditLog;
 use App\Models\Brand;
 use App\Models\Category;
-use App\Models\Container;
 use App\Models\Inventory;
 use App\Models\InventoryMovement;
+use App\Models\MixingTransaction;
 use App\Models\PackageUnit;
 use App\Models\Product;
 use App\Models\Sale;
@@ -31,18 +31,6 @@ test('checkout processes cash sale with discount, decrements stock, and logs mov
     ]);
 
     Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 10.0]);
-
-    // Create 2 containers for checkout to consume
-    for ($i = 0; $i < 2; $i++) {
-        Container::create([
-            'product_id' => $product->id,
-            'location' => 'storefront',
-            'identifier' => 'TEST-BOY-GAL-'.($i + 1),
-            'capacity' => 4.0,
-            'current_quantity' => 4.0,
-            'is_sealed' => true,
-        ]);
-    }
 
     session([
         'pos.cart' => [
@@ -123,4 +111,201 @@ test('dedicated printable receipt renders cleanly without navigation chrome', fu
         ->assertSee('₱192.50')
         ->assertDontSee('Dashboard') // App navigation chrome excluded
         ->assertDontSee('User Management');
+});
+
+test('checkout cash tendered validation runs live and reactively triggers and dismisses insufficient amount error', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+    $brand = Brand::create(['name' => 'Boysen', 'active' => true]);
+    $category = Category::create(['name' => 'Latex', 'active' => true]);
+    $product = Product::create([
+        'sku' => 'TEST-PROD-LIVE',
+        'name' => 'Boysen Permacoat',
+        'brand_id' => $brand->id,
+        'category_id' => $category->id,
+        'selling_price' => 1000.00,
+        'active' => true,
+    ]);
+
+    session([
+        'pos.cart' => [
+            [
+                'id' => 'prod_'.$product->id,
+                'type' => 'product',
+                'product_id' => $product->id,
+                'description' => $product->name,
+                'unit' => 'gal',
+                'unit_price' => 1000.00,
+                'quantity' => 1.0,
+                'subtotal' => 1000.00,
+            ],
+        ],
+    ]);
+
+    $component = Volt::actingAs($user)
+        ->test('pages.sales.checkout');
+
+    // Initially total is 1000.
+    // Typing an insufficient amount (500) triggers insufficient amount error
+    $component->set('tenderedAmount', '500')
+        ->assertHasErrors(['tenderedAmount']);
+
+    // Typing sufficient amount (1000) dismisses error
+    $component->set('tenderedAmount', '1000')
+        ->assertHasNoErrors(['tenderedAmount']);
+
+    // Typing more than sufficient (1500) remains valid and calculates change (500)
+    $component->set('tenderedAmount', '1500')
+        ->assertHasNoErrors(['tenderedAmount']);
+    expect($component->instance()->changeDue())->toBe(500.00);
+
+    // Clearing to empty string triggers insufficient amount error
+    $component->set('tenderedAmount', '')
+        ->assertHasErrors(['tenderedAmount']);
+
+    // Changing discount reduces total due, making previously insufficient amount valid
+    $component->set('tenderedAmount', '950')
+        ->assertHasErrors(['tenderedAmount'])
+        ->set('discountPercentage', '10') // Total becomes 900
+        ->assertHasNoErrors(['tenderedAmount']);
+    expect($component->instance()->changeDue())->toBe(50.00);
+});
+
+test('custom mix checkout calculates change when downpayment exceeds final formula price', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+    $brand = Brand::create(['name' => 'Boysen', 'active' => true]);
+    $category = Category::create(['name' => 'Latex', 'active' => true]);
+    $basePaint = Product::create([
+        'sku' => 'BASE-750',
+        'name' => 'Boysen Base 750',
+        'brand_id' => $brand->id,
+        'category_id' => $category->id,
+        'selling_price' => 750.00,
+        'active' => true,
+    ]);
+
+    // Downpayment of 1000 was collected for 1 gal mix
+    $sale = Sale::create([
+        'user_id' => $user->id,
+        'customer_name' => 'Maria Santos',
+        'customer_contact' => '0918-123-4567',
+        'invoice_number' => 'SALE-MIX-EXCESS',
+        'sold_at' => now(),
+        'type' => 'mixed',
+        'subtotal' => 1000.0,
+        'total' => 1000.0,
+        'downpayment_amount' => 1000.0,
+        'balance_due' => 0.0,
+        'payment_status' => 'downpayment_paid',
+        'payment_method' => 'cash',
+        'payment_amount' => 1000.0,
+        'change_amount' => 0.0,
+    ]);
+
+    $tx = MixingTransaction::create([
+        'sale_id' => $sale->id,
+        'brand_id' => $brand->id,
+        'custom_color' => 'Sunset Peach',
+        'resulting_quantity' => 1.0,
+        'resulting_unit' => 'gal',
+        'price_basis' => 1000.0,
+        'status' => 'pending_mix',
+    ]);
+
+    // Mixer logs formula with basePaint (price 750)
+    Volt::actingAs($user)
+        ->test('pages.sales.custom-mixes')
+        ->call('openFormulaModal', $tx->id)
+        ->set('formulaProductId', (string) $basePaint->id)
+        ->call('addFormulaComponent')
+        ->call('saveFormula')
+        ->assertHasNoErrors();
+
+    $sale->refresh();
+    $tx->refresh();
+
+    // Final total is 750. Downpayment was 1000. Balance is 0. Status is mixed.
+    expect((float) $sale->total)->toBe(750.0)
+        ->and((float) $sale->downpayment_amount)->toBe(1000.0)
+        ->and((float) $sale->balance_due)->toBe(0.0)
+        ->and($tx->status)->toBe('mixed');
+
+    // Customer picks up mixed paint, checkout calculates 250 change
+    session(['pos.collect_mix_sale_id' => $sale->id]);
+
+    $checkout = Volt::actingAs($user)
+        ->test('pages.sales.checkout');
+
+    expect($checkout->instance()->changeDue())->toBe(250.00);
+
+    // Tendered amount defaults to 0.00, customer owes nothing, 0 cash is sufficient
+    $checkout->set('tenderedAmount', '0.00')
+        ->assertHasNoErrors(['tenderedAmount'])
+        ->call('completeSale')
+        ->assertHasNoErrors();
+
+    $sale->refresh();
+    $tx->refresh();
+
+    expect((float) $sale->balance_due)->toBe(0.0)
+        ->and($sale->payment_status)->toBe('paid')
+        ->and((float) $sale->change_amount)->toBe(250.0)
+        ->and($tx->status)->toBe('completed');
+});
+
+test('custom mix checkout calculates extra change when customer tenders cash during release of overpaid downpayment', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+    $brand = Brand::create(['name' => 'Boysen', 'active' => true]);
+    $category = Category::create(['name' => 'Latex', 'active' => true]);
+    $basePaint = Product::create([
+        'sku' => 'BASE-800',
+        'name' => 'Boysen Base 800',
+        'brand_id' => $brand->id,
+        'category_id' => $category->id,
+        'selling_price' => 800.00,
+        'active' => true,
+    ]);
+
+    // Downpayment of 1000 was collected for 1 gal mix
+    $sale = Sale::create([
+        'user_id' => $user->id,
+        'customer_name' => 'Jose Rizal',
+        'customer_contact' => '0919-000-1111',
+        'invoice_number' => 'SALE-MIX-EXCESS-2',
+        'sold_at' => now(),
+        'type' => 'mixed',
+        'subtotal' => 800.0,
+        'total' => 800.0,
+        'downpayment_amount' => 1000.0,
+        'balance_due' => 0.0,
+        'payment_status' => 'downpayment_paid',
+        'payment_method' => 'cash',
+        'payment_amount' => 1000.0,
+        'change_amount' => 0.0,
+    ]);
+
+    $tx = MixingTransaction::create([
+        'sale_id' => $sale->id,
+        'brand_id' => $brand->id,
+        'custom_color' => 'Laguna Teal',
+        'resulting_quantity' => 1.0,
+        'resulting_unit' => 'gal',
+        'price_basis' => 800.0,
+        'status' => 'mixed',
+    ]);
+
+    session(['pos.collect_mix_sale_id' => $sale->id]);
+
+    // Downpayment was 1000, total is 800 (refund 200). Customer tenders 50.00. Total change should be 250.00.
+    Volt::actingAs($user)
+        ->test('pages.sales.checkout')
+        ->set('tenderedAmount', '50.00')
+        ->assertHasNoErrors(['tenderedAmount'])
+        ->call('completeSale')
+        ->assertHasNoErrors();
+
+    $sale->refresh();
+    expect((float) $sale->change_amount)->toBe(250.0)
+        ->and((float) $sale->payment_amount)->toBe(1050.0)
+        ->and($sale->payment_status)->toBe('paid')
+        ->and($tx->fresh()->status)->toBe('completed');
 });

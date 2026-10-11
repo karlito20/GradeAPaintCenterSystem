@@ -69,10 +69,16 @@ new #[Layout('layouts.app')] class extends Component {
             'name' => ['required', 'string', 'max:100', $this->editingId ? 'unique:package_units,name,' . $this->editingId : 'unique:package_units,name'],
             'abbreviation' => ['nullable', 'string', 'max:20'],
             'is_for_paint' => ['boolean'],
-            'gallon_fraction' => ['nullable', 'numeric', 'min:0'],
+            'gallon_fraction' => ['nullable', 'numeric', 'min:0', 'max:99999.99'],
         ];
 
-        $this->validate($rules);
+        $this->validate($rules, [
+            'name.required' => 'Unit name is required.',
+            'name.unique' => 'A package unit with this name already exists.',
+            'gallon_fraction.numeric' => 'Gallon fraction must be a valid number.',
+            'gallon_fraction.min' => 'Gallon fraction cannot be negative.',
+            'gallon_fraction.max' => 'Gallon fraction cannot exceed 99,999.99.',
+        ]);
 
         if ($this->editingId) {
             $unit = PackageUnit::findOrFail($this->editingId);
@@ -493,7 +499,9 @@ new #[Layout('layouts.app')] class extends Component {
                             <div class="text-[10px] text-slate-500 mb-1">E.g. 1 for Gallon, 0.25 for Liter, 0.125 for
                                 1/2 Liter</div>
                             <input wire:model="gallon_fraction" id="modal_gallon_fraction" type="number"
-                                step="0.0001" min="0" placeholder="0.00"
+                                step="0.0001" min="0" max="99999.99" placeholder="0.00"
+                                inputmode="decimal"
+                                x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                 class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-slate-500" />
                             <x-input-error :messages="$errors->get('gallon_fraction')" class="mt-1" />
                         </div>

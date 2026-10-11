@@ -4,12 +4,10 @@ namespace Database\Seeders;
 
 use App\Models\Brand;
 use App\Models\Category;
-use App\Models\Container;
 use App\Models\Inventory;
 use App\Models\PackageUnit;
 use App\Models\Product;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class DummyDataSeeder extends Seeder
 {
@@ -70,21 +68,6 @@ class DummyDataSeeder extends Seeder
                     'location' => 'storefront',
                     'quantity' => $p['stock'],
                 ]);
-            }
-
-            // Create containers for paint products
-            if ($p['category_id'] === $paintCat->id) {
-                for ($i = 0; $i < $p['stock']; $i++) {
-                    Container::create([
-                        'product_id' => $product->id,
-                        'location' => 'storefront',
-                        'identifier' => 'C-'.strtoupper(Str::random(6)),
-                        'capacity' => 1,
-                        'current_quantity' => 1,
-                        'is_sealed' => true,
-                        'requires_physical_check' => false,
-                    ]);
-                }
             }
         }
     }

@@ -63,7 +63,11 @@ new #[Layout('layouts.app')] class extends Component {
             'name' => ['required', 'string', 'max:100', $this->editingId ? 'unique:categories,name,' . $this->editingId : 'unique:categories,name'],
         ];
 
-        $this->validate($rules);
+        $this->validate($rules, [
+            'name.required' => 'The category name is required.',
+            'name.max' => 'The category name cannot exceed 100 characters.',
+            'name.unique' => 'This category name already exists.',
+        ]);
 
         if ($this->editingId) {
             $category = Category::findOrFail($this->editingId);
@@ -444,6 +448,7 @@ new #[Layout('layouts.app')] class extends Component {
                             Category Name <span class="text-rose-500">*</span>
                         </label>
                         <input wire:model="name" id="modal_category_name" type="text"
+                            maxlength="100"
                             placeholder="e.g. Primers, Topcoats, Thinners, Solvents"
                             class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-slate-500"
                             required autofocus />

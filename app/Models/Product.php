@@ -59,11 +59,6 @@ class Product extends Model
         return $this->inventories()->where('location', $location)->first();
     }
 
-    public function containers(): HasMany
-    {
-        return $this->hasMany(Container::class);
-    }
-
     public function inventoryMovements(): HasMany
     {
         return $this->hasMany(InventoryMovement::class);

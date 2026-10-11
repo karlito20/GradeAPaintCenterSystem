@@ -86,19 +86,24 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->validate([
             'newCustomerName' => ['required', 'string', 'max:255'],
-            'newCustomerContact' => ['required', 'string', 'max:255'],
+            'newCustomerContact' => ['required', 'string', 'max:50', 'regex:/^[0-9+\-\s()]{7,30}$/'],
             'newBrandId' => ['required', 'exists:brands,id'],
             'newCustomColor' => ['required', 'string', 'max:255'],
-            'newQuantity' => ['required', 'numeric', 'gt:0'],
+            'newQuantity' => ['required', 'numeric', 'gt:0', 'max:99999.99'],
             'newResultUnit' => ['required', 'in:gal,L'],
-            'newDownpaymentAmount' => ['required', 'numeric', 'min:1'],
+            'newDownpaymentAmount' => ['required', 'numeric', 'min:1', 'max:999999.99'],
         ], [
             'newCustomerName.required' => 'Customer name is required.',
             'newCustomerContact.required' => 'Customer contact number is required.',
+            'newCustomerContact.regex' => 'Contact number must contain only numbers, dashes, spaces, or parentheses.',
             'newBrandId.required' => 'Please select the brand.',
             'newCustomColor.required' => 'Custom color name or code is required.',
+            'newQuantity.numeric' => 'Quantity must be a valid number.',
+            'newQuantity.max' => 'Quantity cannot exceed 99,999.99.',
             'newDownpaymentAmount.required' => 'A downpayment is required before mixing begins.',
+            'newDownpaymentAmount.numeric' => 'Downpayment must be a valid number.',
             'newDownpaymentAmount.min' => 'Downpayment must be at least ₱1.00.',
+            'newDownpaymentAmount.max' => 'Downpayment cannot exceed ₱999,999.99.',
         ]);
 
         $brand = Brand::findOrFail($this->newBrandId);
@@ -265,13 +270,12 @@ new #[Layout('layouts.app')] class extends Component {
         $downpayment = (float) $sale->downpayment_amount;
         $balance = max(0, round($total - $downpayment, 2));
 
-        DB::transaction(function () use ($tx, $sale, $basisProduct, $basis, $total, $balance) {
+        DB::transaction(function () use ($tx, $sale, $basisProduct, $basis, $total, $balance, $downpayment) {
             // Re-sync components
             $tx->components()->delete();
             foreach ($this->formulaComponents as $comp) {
                 $tx->components()->create([
                     'product_id' => $comp['product_id'],
-                    'container_id' => null,
                 ]);
                 Product::where('id', $comp['product_id'])->update(['requires_physical_check' => true]);
             }
@@ -290,7 +294,7 @@ new #[Layout('layouts.app')] class extends Component {
                 'subtotal' => $total,
                 'total' => $total,
                 'balance_due' => $balance,
-                'payment_status' => $balance > 0 ? 'downpayment_paid' : 'paid',
+                'payment_status' => ($balance > 0 || $downpayment > $total) ? 'downpayment_paid' : 'paid',
             ]);
 
             $sale->items()->delete();
@@ -564,6 +568,10 @@ new #[Layout('layouts.app')] class extends Component {
                             <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums whitespace-nowrap text-slate-700">
                                 @if ($isDownpaid)
                                     <span class="text-slate-400 italic text-[11px]">TBD</span>
+                                @elseif ((float) ($sale?->downpayment_amount ?? 0) > (float) ($sale?->total ?? 0))
+                                    <span class="">
+                                        +{{ $currency::format((float) $sale->downpayment_amount - (float) $sale->total) }} 
+                                    </span>
                                 @elseif ((float) ($sale?->balance_due ?? 0) > 0)
                                     <span class="font-medium text-slate-900">{{ $currency::format($sale->balance_due) }}</span>
                                 @else
@@ -807,10 +815,17 @@ new #[Layout('layouts.app')] class extends Component {
                                 <span>Less Downpayment Paid:</span>
                                 <span class="font-semibold text-slate-700 tabular-nums">-{{ $currency::format($downpayment) }}</span>
                             </div>
-                            <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-1.5 mt-1">
-                                <span>Balance Due upon Pickup:</span>
-                                <span class="text-rose-700 tabular-nums">{{ $currency::format($balance) }}</span>
-                            </div>
+                            @if ($downpayment > $calculatedTotal)
+                                <div class="flex justify-between text-sm font-bold text-emerald-700 border-t border-slate-200 pt-1.5 mt-1">
+                                    <span>Change Due to Customer upon Pickup:</span>
+                                    <span class="tabular-nums">{{ $currency::format($downpayment - $calculatedTotal) }}</span>
+                                </div>
+                            @else
+                                <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-1.5 mt-1">
+                                    <span>Balance Due upon Pickup:</span>
+                                    <span class="text-rose-700 tabular-nums">{{ $currency::format($balance) }}</span>
+                                </div>
+                            @endif
                         </div>
                     @endif
                 </div>
@@ -853,6 +868,8 @@ new #[Layout('layouts.app')] class extends Component {
                         <div>
                             <label class="block font-semibold text-slate-700 mb-1">Contact Number <span class="text-rose-600">*</span></label>
                             <input wire:model="newCustomerContact" type="text" placeholder="09XX..."
+                                inputmode="tel"
+                                x-on:keydown="if(!/[0-9+\-\s()]/.test($event.key) && !['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Enter'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                 class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-0" />
                             @error('newCustomerContact') <p class="text-rose-600 text-[10px]">{{ $message }}</p> @enderror
                         </div>
@@ -880,7 +897,9 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="grid grid-cols-2 gap-2">
                         <div>
                             <label class="block font-semibold text-slate-700 mb-1">Quantity <span class="text-rose-600">*</span></label>
-                            <input wire:model="newQuantity" type="number" step="0.25" min="0.25"
+                            <input wire:model="newQuantity" type="number" step="0.25" min="0.25" max="99999.99"
+                                inputmode="decimal"
+                                x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                 class="w-full rounded border-slate-300 text-xs tabular-nums focus:border-slate-500 focus:ring-0" />
                             @error('newQuantity') <p class="text-rose-600 text-[10px]">{{ $message }}</p> @enderror
                         </div>
@@ -901,7 +920,9 @@ new #[Layout('layouts.app')] class extends Component {
 
                     <div class="pt-1 border-t border-slate-200">
                         <label class="block font-semibold text-slate-700 mb-1">Downpayment (₱) <span class="text-rose-600">*</span></label>
-                        <input wire:model.live.debounce.150ms="newDownpaymentAmount" type="number" step="0.01" min="1" placeholder="0.00"
+                        <input wire:model.live.debounce.150ms="newDownpaymentAmount" type="number" step="0.01" min="1" max="999999.99" placeholder="0.00"
+                            inputmode="decimal"
+                            x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                             class="w-full rounded border-slate-300 text-xs font-bold tabular-nums focus:border-slate-500 focus:ring-0" />
                         @error('newDownpaymentAmount') <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p> @enderror
                     </div>
@@ -955,7 +976,7 @@ new #[Layout('layouts.app')] class extends Component {
                     class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
                 >
                     <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-                    <span>Pay Balance at POS Checkout</span>
+                    <span>Final Checkout &amp; Release at POS</span>
                 </button>
             </template>
         @endif

@@ -99,9 +99,13 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
-        $qty = max(0.01, (float) $val);
+        if (!is_numeric($val)) {
+            return;
+        }
+
+        $qty = max(0.01, min(999999.99, (float) $val));
         $this->orderItems[$index]['quantity'] = $qty;
-        $this->orderItems[$index]['subtotal'] = $qty * (float) $this->orderItems[$index]['unit_cost'];
+        $this->orderItems[$index]['subtotal'] = round($qty * (float) $this->orderItems[$index]['unit_cost'], 2);
     }
 
     public function updateItemCost(int $index, mixed $val): void
@@ -110,9 +114,13 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
-        $cost = max(0, (float) $val);
+        if (!is_numeric($val)) {
+            return;
+        }
+
+        $cost = max(0, min(999999.99, (float) $val));
         $this->orderItems[$index]['unit_cost'] = $cost;
-        $this->orderItems[$index]['subtotal'] = (float) $this->orderItems[$index]['quantity'] * $cost;
+        $this->orderItems[$index]['subtotal'] = round((float) $this->orderItems[$index]['quantity'] * $cost, 2);
     }
 
     public function removeOrderItem(int $index): void
@@ -136,11 +144,17 @@ new #[Layout('layouts.app')] class extends Component {
             'notes' => ['nullable', 'string', 'max:1000'],
             'orderItems' => ['required', 'array', 'min:1'],
             'orderItems.*.product_id' => ['required', 'exists:products,id'],
-            'orderItems.*.quantity' => ['required', 'numeric', 'min:0.01'],
-            'orderItems.*.unit_cost' => ['required', 'numeric', 'min:0'],
+            'orderItems.*.quantity' => ['required', 'numeric', 'min:0.01', 'max:999999.99'],
+            'orderItems.*.unit_cost' => ['required', 'numeric', 'min:0', 'max:999999.99'],
         ], [
             'orderItems.min' => 'You must add at least one product item to create a purchase order.',
             'orderItems.required' => 'You must add at least one product item to create a purchase order.',
+            'orderItems.*.quantity.min' => 'Quantity must be greater than zero.',
+            'orderItems.*.quantity.max' => 'Quantity cannot exceed 999,999.99.',
+            'orderItems.*.quantity.numeric' => 'Quantity must be a valid number.',
+            'orderItems.*.unit_cost.min' => 'Unit cost cannot be negative.',
+            'orderItems.*.unit_cost.max' => 'Unit cost cannot exceed 999,999.99.',
+            'orderItems.*.unit_cost.numeric' => 'Unit cost must be a valid number.',
             'expectedDeliveryDate.after_or_equal' => 'Expected delivery date cannot be earlier than the order date.',
         ]);
 
@@ -410,20 +424,32 @@ new #[Layout('layouts.app')] class extends Component {
                                         type="number" 
                                         step="0.01" 
                                         min="0.01" 
+                                        max="999999.99"
+                                        inputmode="decimal"
+                                        x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                         value="{{ $item['quantity'] }}"
                                         wire:change="updateItemQuantity({{ $index }}, $event.target.value)"
                                         class="w-24 rounded border-slate-300 text-xs py-1 px-2 text-right tabular-nums focus:border-[#00a3cc] focus:ring-0" 
                                     />
+                                    @error('orderItems.' . $index . '.quantity')
+                                        <p class="text-rose-600 text-[10px] mt-0.5 text-right">{{ $message }}</p>
+                                    @enderror
                                 </td>
                                 <td class="border border-slate-200 px-2.5 py-1 text-right">
                                     <input 
                                         type="number" 
                                         step="0.01" 
                                         min="0" 
+                                        max="999999.99"
+                                        inputmode="decimal"
+                                        x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                         value="{{ $item['unit_cost'] }}"
                                         wire:change="updateItemCost({{ $index }}, $event.target.value)"
                                         class="w-28 rounded border-slate-300 text-xs py-1 px-2 text-right tabular-nums focus:border-[#00a3cc] focus:ring-0" 
                                     />
+                                    @error('orderItems.' . $index . '.unit_cost')
+                                        <p class="text-rose-600 text-[10px] mt-0.5 text-right">{{ $message }}</p>
+                                    @enderror
                                 </td>
                                 <td class="border border-slate-200 px-3 py-2 text-right font-bold tabular-nums text-slate-900 whitespace-nowrap">
                                     {{ $currency::format($item['subtotal']) }}

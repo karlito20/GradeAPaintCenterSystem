@@ -2,7 +2,6 @@
 
 use App\Models\Brand;
 use App\Models\Category;
-use App\Models\Container;
 use App\Models\Inventory;
 use App\Models\InventoryMovement;
 use App\Models\Product;
@@ -49,23 +48,6 @@ test('a sale cannot exceed available inventory and reduces stock when valid', fu
     $user = User::factory()->create();
     $product = inventoryProduct();
     $product->inventories()->where('location', 'storefront')->update(['quantity' => 2]);
-
-    Container::create([
-        'product_id' => $product->id,
-        'location' => 'storefront',
-        'identifier' => 'CONT-1',
-        'capacity' => 1,
-        'current_quantity' => 1,
-        'is_sealed' => true,
-    ]);
-    Container::create([
-        'product_id' => $product->id,
-        'location' => 'storefront',
-        'identifier' => 'CONT-2',
-        'capacity' => 1,
-        'current_quantity' => 1,
-        'is_sealed' => true,
-    ]);
 
     Volt::actingAs($user)
         ->test('pages.sales.index')

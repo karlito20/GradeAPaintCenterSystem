@@ -91,9 +91,14 @@ new #[Layout('layouts.app')] class extends Component {
 
         $this->validate([
             'createName' => ['required', 'string', 'max:255'],
-            'createUsername' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:users,username'],
+            'createUsername' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z0-9_.-]+$/', 'unique:users,username'],
             'createRole' => ['required', 'string', Rule::in($allowedRoles)],
             'createPassword' => ['required', 'string', 'min:8', 'confirmed'],
+        ], [
+            'createUsername.regex' => 'Username can only contain letters, numbers, dashes, underscores, and dots.',
+            'createUsername.unique' => 'This username is already taken.',
+            'createPassword.min' => 'Password must be at least 8 characters.',
+            'createPassword.confirmed' => 'Password confirmation does not match.',
         ]);
 
         $user = User::create([
@@ -156,8 +161,11 @@ new #[Layout('layouts.app')] class extends Component {
 
         $this->validate([
             'editName' => ['required', 'string', 'max:255'],
-            'editUsername' => ['required', 'string', 'max:255', 'alpha_dash', Rule::unique('users', 'username')->ignore($user->id)],
+            'editUsername' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z0-9_.-]+$/', Rule::unique('users', 'username')->ignore($user->id)],
             'editRole' => ['required', 'string', Rule::in($allowedRoles)],
+        ], [
+            'editUsername.regex' => 'Username can only contain letters, numbers, dashes, underscores, and dots.',
+            'editUsername.unique' => 'This username is already taken.',
         ]);
 
         $oldData = ['name' => $user->name, 'username' => $user->username, 'role' => $user->role];
@@ -221,6 +229,9 @@ new #[Layout('layouts.app')] class extends Component {
 
         $this->validate([
             'newPassword' => ['required', 'string', 'min:8', 'confirmed'],
+        ], [
+            'newPassword.min' => 'Password must be at least 8 characters.',
+            'newPassword.confirmed' => 'Password confirmation does not match.',
         ]);
 
         $user->update([

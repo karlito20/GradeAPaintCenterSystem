@@ -3,7 +3,6 @@
 use App\Models\AuditLog;
 use App\Models\Brand;
 use App\Models\Category;
-use App\Models\Container;
 use App\Models\Inventory;
 use App\Models\PackageUnit;
 use App\Models\Product;
@@ -120,8 +119,6 @@ test('completing a checkout converts the linked quotation and stores 12% VAT and
         'active' => true,
     ]);
     Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 10.0]);
-    Container::create(['product_id' => $product->id, 'location' => 'storefront', 'identifier' => 'CONT-Q-1', 'capacity' => 1, 'current_quantity' => 1, 'is_sealed' => true]);
-    Container::create(['product_id' => $product->id, 'location' => 'storefront', 'identifier' => 'CONT-Q-2', 'capacity' => 1, 'current_quantity' => 1, 'is_sealed' => true]);
 
     $quote = Quotation::create([
         'user_id' => $user->id,
@@ -335,8 +332,6 @@ test('cashier checkout with discount requires admin password authorization', fun
         'active' => true,
     ]);
     Inventory::create(['product_id' => $product->id, 'location' => 'storefront', 'quantity' => 10.0]);
-    Container::create(['product_id' => $product->id, 'location' => 'storefront', 'identifier' => 'CONT-Q-1', 'capacity' => 1, 'current_quantity' => 1, 'is_sealed' => true]);
-    Container::create(['product_id' => $product->id, 'location' => 'storefront', 'identifier' => 'CONT-Q-2', 'capacity' => 1, 'current_quantity' => 1, 'is_sealed' => true]);
 
     session([
         'pos.cart' => [

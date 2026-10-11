@@ -148,10 +148,12 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->validate([
             'selectedProductId' => ['required', 'exists:products,id'],
-            'addQty' => ['required', 'numeric', 'min:1'],
+            'addQty' => ['required', 'numeric', 'min:1', 'max:99999'],
         ], [
             'selectedProductId.required' => 'Select a product first.',
+            'addQty.numeric' => 'Quantity must be a valid number.',
             'addQty.min' => 'Quantity must be at least 1.',
+            'addQty.max' => 'Quantity cannot exceed 99,999.',
         ]);
 
         if ($this->hasCustomMixInCart()) {
@@ -321,6 +323,10 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
+        if (! is_numeric($value)) {
+            return;
+        }
+
         $isCustomMix = ($this->cart[$key]['type'] ?? '') === 'custom_mix';
         $isRepack = ($this->cart[$key]['type'] ?? '') === 'repack';
         $qty = $isCustomMix ? (float) $value : round((float) $value);
@@ -328,6 +334,10 @@ new #[Layout('layouts.app')] class extends Component {
         if ($qty <= 0) {
             $this->removeFromCart($key);
             return;
+        }
+
+        if ($qty > 99999.99) {
+            $qty = 99999.99;
         }
 
         if (! $isCustomMix) {
@@ -437,19 +447,24 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->validate([
             'mixCustomerName' => ['required', 'string', 'max:255'],
-            'mixCustomerContact' => ['required', 'string', 'max:255'],
+            'mixCustomerContact' => ['required', 'string', 'max:50', 'regex:/^[0-9+\-\s()]{7,30}$/'],
             'mixBrandId' => ['required', 'exists:brands,id'],
             'mixCustomColor' => ['required', 'string', 'max:255'],
-            'mixQuantity' => ['required', 'numeric', 'gt:0'],
+            'mixQuantity' => ['required', 'numeric', 'gt:0', 'max:99999.99'],
             'mixResultUnit' => ['required', 'in:gal,L'],
-            'mixDownpaymentAmount' => ['required', 'numeric', 'min:1'],
+            'mixDownpaymentAmount' => ['required', 'numeric', 'min:1', 'max:999999.99'],
         ], [
             'mixCustomerName.required' => 'Customer name is required for mixing orders.',
             'mixCustomerContact.required' => 'Customer contact number is required.',
+            'mixCustomerContact.regex' => 'Contact number must contain only numbers, dashes, spaces, or parentheses.',
             'mixBrandId.required' => 'Select the brand for this custom mix.',
             'mixCustomColor.required' => 'Custom color name or code is required.',
+            'mixQuantity.numeric' => 'Requested quantity must be a valid number.',
+            'mixQuantity.max' => 'Quantity cannot exceed 99,999.99.',
             'mixDownpaymentAmount.required' => 'A downpayment is required before mixing begins.',
+            'mixDownpaymentAmount.numeric' => 'Downpayment must be a valid number.',
             'mixDownpaymentAmount.min' => 'Downpayment must be at least ₱1.00.',
+            'mixDownpaymentAmount.max' => 'Downpayment cannot exceed ₱999,999.99.',
         ]);
 
         $brand = Brand::findOrFail($this->mixBrandId);
@@ -588,17 +603,20 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->validate([
             'mixCustomerName' => ['required', 'string', 'max:255'],
-            'mixCustomerContact' => ['required', 'string', 'max:255'],
+            'mixCustomerContact' => ['required', 'string', 'max:50', 'regex:/^[0-9+\-\s()]{7,30}$/'],
             'mixBrandId' => ['required', 'exists:brands,id'],
             'mixCustomColor' => ['required', 'string', 'max:255'],
-            'mixQuantity' => ['required', 'numeric', 'gt:0'],
+            'mixQuantity' => ['required', 'numeric', 'gt:0', 'max:99999.99'],
             'mixResultUnit' => ['required', 'in:gal,L'],
             'mixComponents' => ['required', 'array', 'min:1'],
         ], [
             'mixCustomerName.required' => 'Customer name is required for mixing orders.',
             'mixCustomerContact.required' => 'Customer contact number is required.',
+            'mixCustomerContact.regex' => 'Contact number must contain only numbers, dashes, spaces, or parentheses.',
             'mixBrandId.required' => 'Select the brand for this custom mix.',
             'mixCustomColor.required' => 'Custom color name or code is required.',
+            'mixQuantity.numeric' => 'Requested quantity must be a valid number.',
+            'mixQuantity.max' => 'Quantity cannot exceed 99,999.99.',
             'mixComponents.min' => 'Add at least one material to the mixture formula.',
         ]);
 
@@ -670,11 +688,15 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $rules = [
             'quoteCustomerName' => ['nullable', 'string', 'max:200'],
-            'quoteCustomerContact' => ['nullable', 'string', 'max:100'],
+            'quoteCustomerContact' => ['nullable', 'string', 'max:50'],
             'quoteNotes' => ['nullable', 'string', 'max:1000'],
             'quoteValidDays' => ['required', 'integer', 'min:1', 'max:365'],
             'quoteDiscountPercentage' => ['required', 'numeric', 'min:0', 'max:100'],
         ];
+
+        if (trim($this->quoteCustomerContact) !== '') {
+            $rules['quoteCustomerContact'][] = 'regex:/^[0-9+\-\s()]{7,30}$/';
+        }
 
         if ((float) $this->quoteDiscountPercentage > 0) {
             if (empty($this->quoteDiscountReason)) {
@@ -683,7 +705,15 @@ new #[Layout('layouts.app')] class extends Component {
             $rules['quoteDiscountReason'] = ['required', 'string', 'min:3', 'max:255'];
         }
 
-        $this->validate($rules);
+        $this->validate($rules, [
+            'quoteCustomerContact.regex' => 'Contact number must contain only numbers, dashes, spaces, or parentheses.',
+            'quoteValidDays.integer' => 'Valid days must be a whole number.',
+            'quoteValidDays.min' => 'Validity must be at least 1 day.',
+            'quoteValidDays.max' => 'Validity cannot exceed 365 days.',
+            'quoteDiscountPercentage.numeric' => 'Discount percentage must be a valid number.',
+            'quoteDiscountPercentage.min' => 'Discount cannot be negative.',
+            'quoteDiscountPercentage.max' => 'Discount cannot exceed 100%.',
+        ]);
 
         $subtotal = $this->cartSubtotal();
         $discountPct = (float) $this->quoteDiscountPercentage;
@@ -848,7 +878,12 @@ new #[Layout('layouts.app')] class extends Component {
         $pendingMixOrders = Sale::query()
             ->with(['mixingTransaction.brand', 'user'])
             ->where('payment_status', 'downpayment_paid')
-            ->where('balance_due', '>', 0)
+            ->where(function ($q) {
+                $q->where('balance_due', '>', 0)
+                    ->orWhereHas('mixingTransaction', function ($mq) {
+                        $mq->whereIn('status', ['mixed', 'ready_for_pickup']);
+                    });
+            })
             ->latest()
             ->get();
 
@@ -1098,6 +1133,9 @@ new #[Layout('layouts.app')] class extends Component {
                                                     type="number"
                                                     step="0.01"
                                                     min="0.01"
+                                                    max="99999.99"
+                                                    inputmode="decimal"
+                                                    x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                                     value="{{ (float) $line['quantity'] }}"
                                                     wire:change="updateCartQty('{{ $key }}', $event.target.value)"
                                                     class="w-16 rounded border-slate-300 text-center text-xs tabular-nums font-bold text-slate-900 focus:border-slate-500 focus:ring-0 py-1"
@@ -1114,9 +1152,12 @@ new #[Layout('layouts.app')] class extends Component {
                                                         type="number"
                                                         step="1"
                                                         min="1"
+                                                        max="99999"
+                                                        inputmode="numeric"
+                                                        x-on:keydown="if(['e','E','+','-','.'].includes($event.key)) $event.preventDefault()"
                                                         value="{{ (int) $line['quantity'] }}"
                                                         wire:change="updateCartQty('{{ $key }}', $event.target.value)"
-                                                        class="w-10 border-0 p-0 text-center text-xs tabular-nums font-bold text-slate-900 focus:ring-0 py-1"
+                                                        class="w-12 border-0 p-0 text-center text-xs tabular-nums font-bold text-slate-900 focus:ring-0 py-1"
                                                     />
                                                     <button type="button"
                                                         wire:click="updateCartQty('{{ $key }}', '{{ (int)$line['quantity'] + 1 }}')"
@@ -1254,7 +1295,9 @@ new #[Layout('layouts.app')] class extends Component {
                                 class="h-9 w-9 flex items-center justify-center rounded border border-slate-300 bg-white text-slate-700 font-bold text-sm hover:bg-slate-100 transition shadow-xs">
                                 −
                             </button>
-                            <input wire:model.live="addQty" type="number" step="1" min="1"
+                            <input wire:model.live="addQty" type="number" step="1" min="1" max="99999"
+                                inputmode="numeric"
+                                x-on:keydown="if(['e','E','+','-','.'].includes($event.key)) $event.preventDefault()"
                                 class="h-9 flex-1 rounded border border-slate-300 text-center font-bold text-sm tabular-nums text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
                             <button type="button"
                                 wire:click="$set('addQty', '{{ (int)$addQty + 1 }}')"
@@ -1329,6 +1372,8 @@ new #[Layout('layouts.app')] class extends Component {
                         <div>
                             <label class="block font-semibold text-slate-700 mb-1">Contact Number <span class="text-rose-600">*</span></label>
                             <input wire:model="mixCustomerContact" type="text" placeholder="09XX..."
+                                inputmode="tel"
+                                x-on:keydown="if(!/[0-9+\-\s()]/.test($event.key) && !['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Enter'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                 class="w-full rounded-lg border-slate-300 text-xs focus:border-slate-500 focus:ring-0 shadow-xs" />
                             @error('mixCustomerContact') <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p> @enderror
                         </div>
@@ -1356,7 +1401,9 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="grid grid-cols-2 gap-2">
                         <div>
                             <label class="block font-semibold text-slate-700 mb-1">Requested Quantity <span class="text-rose-600">*</span></label>
-                            <input wire:model.live="mixQuantity" type="number" step="0.25" min="0.25"
+                            <input wire:model.live="mixQuantity" type="number" step="0.25" min="0.25" max="99999.99"
+                                inputmode="decimal"
+                                x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                 class="w-full rounded-lg border-slate-300 text-xs tabular-nums focus:border-slate-500 focus:ring-0 shadow-xs" />
                             @error('mixQuantity') <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p> @enderror
                         </div>
@@ -1377,7 +1424,9 @@ new #[Layout('layouts.app')] class extends Component {
 
                     <div class="pt-1 border-t border-slate-200">
                         <label class="block font-semibold text-slate-700 mb-1">Downpayment (₱) <span class="text-rose-600">*</span></label>
-                        <input wire:model.live.debounce.150ms="mixDownpaymentAmount" type="number" step="0.01" min="1" placeholder="0.00"
+                        <input wire:model.live.debounce.150ms="mixDownpaymentAmount" type="number" step="0.01" min="1" max="999999.99" placeholder="0.00"
+                            inputmode="decimal"
+                            x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                             class="w-full rounded-lg border-slate-300 text-xs font-bold tabular-nums focus:border-slate-500 focus:ring-0 shadow-xs" />
                         @error('mixDownpaymentAmount') <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p> @enderror
                     </div>
@@ -1454,13 +1503,21 @@ new #[Layout('layouts.app')] class extends Component {
                                             <td class="px-3 py-2 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
                                                 {{ Currency::format($order->downpayment_amount) }}
                                             </td>
-                                            <td class="px-3 py-2 text-right tabular-nums font-bold text-slate-900 whitespace-nowrap">
-                                                {{ Currency::format($order->balance_due) }}
+                                            <td class="px-3 py-2 text-right tabular-nums font-bold whitespace-nowrap">
+                                                @if ((float) $order->downpayment_amount > (float) $order->total && in_array($order->mixingTransaction?->status, ['mixed', 'ready_for_pickup']))
+                                                    <span class="text-emerald-700">Refund {{ Currency::format((float) $order->downpayment_amount - (float) $order->total) }}</span>
+                                                @else
+                                                    <span class="text-slate-900">{{ Currency::format($order->balance_due) }}</span>
+                                                @endif
                                             </td>
                                             <td class="px-3 py-2 text-center whitespace-nowrap">
                                                 <button wire:click="proceedToCollectBalance({{ $order->id }})" type="button"
                                                     class="inline-flex items-center gap-1 rounded bg-[#00a3cc] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#008fb3] transition shadow-xs">
-                                                    Collect Balance
+                                                    @if ((float) $order->downpayment_amount > (float) $order->total && in_array($order->mixingTransaction?->status, ['mixed', 'ready_for_pickup']))
+                                                        Release &amp; Refund
+                                                    @else
+                                                        Collect Balance
+                                                    @endif
                                                 </button>
                                             </td>
                                         </tr>
@@ -1488,11 +1545,15 @@ new #[Layout('layouts.app')] class extends Component {
                             <label class="block font-semibold text-slate-700 mb-1">Customer Name</label>
                             <input wire:model="quoteCustomerName" type="text" placeholder="e.g. Maria Santos"
                                 class="w-full rounded border-slate-300 text-xs focus:border-[#00a3cc] focus:ring-0" />
+                            @error('quoteCustomerName')<p class="text-rose-600 text-[11px]">{{ $message }}</p>@enderror
                         </div>
                         <div>
                             <label class="block font-semibold text-slate-700 mb-1">Contact / Phone</label>
                             <input wire:model="quoteCustomerContact" type="text" placeholder="e.g. 0917-123-4567"
+                                inputmode="tel"
+                                x-on:keydown="if(!/[0-9+\-\s()]/.test($event.key) && !['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Enter'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                 class="w-full rounded border-slate-300 text-xs focus:border-[#00a3cc] focus:ring-0" />
+                            @error('quoteCustomerContact')<p class="text-rose-600 text-[11px]">{{ $message }}</p>@enderror
                         </div>
                     </div>
                     <div class="space-y-2">
@@ -1501,6 +1562,8 @@ new #[Layout('layouts.app')] class extends Component {
                                 Valid For (days) <span class="text-rose-500">*</span>
                             </label>
                             <input wire:model="quoteValidDays" type="number" min="1" max="365"
+                                inputmode="numeric"
+                                x-on:keydown="if(['e','E','+','-','.'].includes($event.key)) $event.preventDefault()"
                                 class="w-full rounded border-slate-300 text-xs tabular-nums focus:border-[#00a3cc] focus:ring-0" />
                             @error('quoteValidDays')<p class="text-rose-600 text-[11px]">{{ $message }}</p>@enderror
                         </div>
@@ -1508,7 +1571,10 @@ new #[Layout('layouts.app')] class extends Component {
                         <div>
                             <label class="block font-semibold text-slate-700 mb-1">Discount Rate (%)</label>
                             <input wire:model.live="quoteDiscountPercentage" type="number" step="0.5" min="0" max="100" placeholder="0"
+                                inputmode="decimal"
+                                x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                 class="w-full rounded border-slate-300 text-xs tabular-nums focus:border-[#00a3cc] focus:ring-0" />
+                            @error('quoteDiscountPercentage')<p class="text-rose-600 text-[11px]">{{ $message }}</p>@enderror
                             @if ((float) $quoteDiscountPercentage > 0)
                                 <div class="space-y-0.5 mt-1">
                                     <label class="block font-semibold text-slate-700 text-[11px]">Discount Reason <span class="text-rose-600">*</span></label>

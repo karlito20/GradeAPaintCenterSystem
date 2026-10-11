@@ -126,6 +126,7 @@ new #[Layout('layouts.app')] class extends Component {
             $this->discountAuthorizedBy = null;
             $this->discountAuthorizedByName = null;
         }
+        $this->validateTenderedAmountLive();
     }
 
     public function setDiscountPreset(string $type, float $val = 0, string $reason = ''): void
@@ -139,6 +140,7 @@ new #[Layout('layouts.app')] class extends Component {
             $this->discountAuthorized = false;
             $this->discountAuthorizedBy = null;
             $this->discountAuthorizedByName = null;
+            $this->validateTenderedAmountLive();
             return;
         }
 
@@ -153,6 +155,8 @@ new #[Layout('layouts.app')] class extends Component {
         if ($val > 0 && ! $this->discountAuthorized && ! (app()->runningUnitTests() && auth()->user()?->isAdminOrSuperadmin())) {
             $this->openAdminAuthModal();
         }
+
+        $this->validateTenderedAmountLive();
     }
 
     public function updatedDiscountValue(): void
@@ -185,6 +189,8 @@ new #[Layout('layouts.app')] class extends Component {
         if ($this->hasCustomMix() && empty($this->downpaymentAmount)) {
             $this->downpaymentAmount = (string) round($this->finalTotal() / 2, 2);
         }
+
+        $this->validateTenderedAmountLive();
     }
 
     public function updatedDiscountPercentage(): void
@@ -192,6 +198,16 @@ new #[Layout('layouts.app')] class extends Component {
         $this->discountMode = 'percentage';
         $this->discountValue = $this->discountPercentage;
         $this->updatedDiscountValue();
+    }
+
+    public function updatedDownpaymentAmount(): void
+    {
+        $this->validateTenderedAmountLive();
+    }
+
+    public function updatedTenderedAmount(): void
+    {
+        $this->validateTenderedAmountLive();
     }
 
     public function openAdminAuthModal(): void
@@ -341,11 +357,85 @@ new #[Layout('layouts.app')] class extends Component {
         return max(0, round($this->subtotal() - $this->discountAmount(), 2));
     }
 
+    public function requiredAmount(): float
+    {
+        if ($this->collectMixSaleId && $this->collectMixSale) {
+            $downpayment = (float) $this->collectMixSale->downpayment_amount;
+            $finalPrice = (float) $this->collectMixSale->total;
+            if ($downpayment >= $finalPrice) {
+                return 0.0;
+            }
+
+            return (float) $this->collectMixSale->balance_due;
+        }
+
+        if ($this->hasCustomMix()) {
+            return (float) $this->downpaymentAmount;
+        }
+
+        return $this->finalTotal();
+    }
+
+    public function insufficientTenderedMessage(): string
+    {
+        $required = $this->requiredAmount();
+
+        if ($this->collectMixSaleId && $this->collectMixSale) {
+            return 'Insufficient cash tendered. Balance due is ' . Currency::format($required) . '.';
+        }
+
+        if ($this->hasCustomMix()) {
+            return 'Insufficient cash tendered. Downpayment due is ' . Currency::format($required) . '.';
+        }
+
+        return 'Insufficient cash tendered. Total due is ' . Currency::format($required) . '.';
+    }
+
+    public function validateTenderedAmountLive(): void
+    {
+        $required = $this->requiredAmount();
+
+        if ($this->tenderedAmount === '' || $this->tenderedAmount === null) {
+            if ($required > 0) {
+                $this->addError('tenderedAmount', $this->insufficientTenderedMessage());
+            } else {
+                $this->resetErrorBag('tenderedAmount');
+            }
+            return;
+        }
+
+        if (! is_numeric($this->tenderedAmount)) {
+            $this->addError('tenderedAmount', 'Please enter a valid numeric amount.');
+            return;
+        }
+
+        $tendered = (float) $this->tenderedAmount;
+
+        if ($tendered < 0) {
+            $this->addError('tenderedAmount', 'Tendered cash cannot be negative.');
+            return;
+        }
+
+        if ($tendered < $required) {
+            $this->addError('tenderedAmount', $this->insufficientTenderedMessage());
+        } else {
+            $this->resetErrorBag('tenderedAmount');
+        }
+    }
+
     public function changeDue(): float
     {
         $tendered = (float) $this->tenderedAmount;
         if ($this->collectMixSaleId && $this->collectMixSale) {
+            $downpayment = (float) $this->collectMixSale->downpayment_amount;
+            $finalPrice = (float) $this->collectMixSale->total;
             $balance = (float) $this->collectMixSale->balance_due;
+
+            if ($downpayment > $finalPrice) {
+                $overpayment = round($downpayment - $finalPrice, 2);
+                return max(0, round($overpayment + $tendered, 2));
+            }
+
             return max(0, round($tendered - $balance, 2));
         }
 
@@ -363,22 +453,31 @@ new #[Layout('layouts.app')] class extends Component {
         abort_unless(auth()->user()?->canCheckout(), 403, 'Mixers cannot access checkout.');
 
         if ($this->collectMixSaleId && $this->collectMixSale) {
-            $balance = (float) $this->collectMixSale->balance_due;
+            $sale = $this->collectMixSale;
+            $downpayment = (float) $sale->downpayment_amount;
+            $finalPrice = (float) $sale->total;
+            $balance = (float) $sale->balance_due;
+            $required = $this->requiredAmount();
+
             $this->validate([
-                'tenderedAmount' => ['required', 'numeric', 'min:' . $balance],
+                'tenderedAmount' => ['required', 'numeric', 'min:' . $required, 'max:999999.99'],
             ], [
-                'tenderedAmount.min' => 'Tendered cash must cover the balance due (' . Currency::format($balance) . ').',
+                'tenderedAmount.required' => 'Tendered cash amount is required.',
+                'tenderedAmount.numeric' => 'Tendered cash must be a valid number.',
+                'tenderedAmount.min' => $required > 0
+                    ? $this->insufficientTenderedMessage()
+                    : 'Tendered cash cannot be negative.',
+                'tenderedAmount.max' => 'Tendered cash cannot exceed ₱999,999.99.',
             ]);
 
             $tendered = (float) $this->tenderedAmount;
-            $change = max(0, round($tendered - $balance, 2));
-            $sale = $this->collectMixSale;
+            $change = $this->changeDue();
 
-            DB::transaction(function () use ($sale, $balance, $tendered, $change) {
+            DB::transaction(function () use ($sale, $balance, $tendered, $change, $downpayment, $finalPrice) {
                 $sale->update([
                     'balance_due' => 0.00,
                     'payment_status' => 'paid',
-                    'payment_amount' => (float) $sale->payment_amount + $balance,
+                    'payment_amount' => (float) $sale->payment_amount + ($balance > 0 ? $balance : $tendered),
                     'change_amount' => $change,
                 ]);
 
@@ -396,6 +495,9 @@ new #[Layout('layouts.app')] class extends Component {
                         'balance_collected' => $balance,
                         'tendered' => $tendered,
                         'change' => $change,
+                        'downpayment' => $downpayment,
+                        'final_total' => $finalPrice,
+                        'overpayment_refund' => $downpayment > $finalPrice ? round($downpayment - $finalPrice, 2) : 0.0,
                     ],
                 ]);
             });
@@ -425,15 +527,27 @@ new #[Layout('layouts.app')] class extends Component {
         $rules = [];
         $messages = [];
 
+        if (trim($this->customerContact) !== '') {
+            $rules['customerContact'] = ['string', 'max:50', 'regex:/^[0-9+\-\s()]{7,30}$/'];
+            $messages['customerContact.regex'] = 'Contact number must contain only numbers, dashes, spaces, or parentheses.';
+        }
+
         if ($hasCustomMix) {
             $rules['downpaymentAmount'] = ['required', 'numeric', 'min:1', 'max:' . $finalTotal];
-            $rules['tenderedAmount'] = ['required', 'numeric', 'min:' . (float) $this->downpaymentAmount];
+            $rules['tenderedAmount'] = ['required', 'numeric', 'min:' . (float) $this->downpaymentAmount, 'max:999999.99'];
             $messages['downpaymentAmount.required'] = 'A downpayment is required for custom paint mixing orders.';
+            $messages['downpaymentAmount.numeric'] = 'Downpayment must be a valid number.';
             $messages['downpaymentAmount.min'] = 'Downpayment must be at least ₱1.00.';
-            $messages['tenderedAmount.min'] = 'Tendered cash must be at least the downpayment due (' . Currency::format((float) $this->downpaymentAmount) . ').';
+            $messages['tenderedAmount.required'] = 'Tendered cash amount is required.';
+            $messages['tenderedAmount.numeric'] = 'Tendered cash must be a valid number.';
+            $messages['tenderedAmount.min'] = $this->insufficientTenderedMessage();
+            $messages['tenderedAmount.max'] = 'Tendered cash cannot exceed ₱999,999.99.';
         } else {
-            $rules['tenderedAmount'] = ['required', 'numeric', 'min:' . $finalTotal];
-            $messages['tenderedAmount.min'] = 'Tendered cash must be at least the total due (' . Currency::format($finalTotal) . ').';
+            $rules['tenderedAmount'] = ['required', 'numeric', 'min:' . $finalTotal, 'max:999999.99'];
+            $messages['tenderedAmount.required'] = 'Tendered cash amount is required.';
+            $messages['tenderedAmount.numeric'] = 'Tendered cash must be a valid number.';
+            $messages['tenderedAmount.min'] = $this->insufficientTenderedMessage();
+            $messages['tenderedAmount.max'] = 'Tendered cash cannot exceed ₱999,999.99.';
         }
 
         if ($discountAmt > 0) {
@@ -533,7 +647,6 @@ new #[Layout('layouts.app')] class extends Component {
                         foreach (($line['components'] ?? []) as $component) {
                             $mix->components()->create([
                                 'product_id' => $component['product_id'],
-                                'container_id' => null,
                             ]);
                             Product::where('id', $component['product_id'])->update(['requires_physical_check' => true]);
                         }
@@ -781,11 +894,15 @@ new #[Layout('layouts.app')] class extends Component {
                         <input wire:model.live.debounce.300ms="customerName" type="text" placeholder="Customer name"
                             @readonly($isCollectingBalance)
                             class="w-full h-9 rounded border border-slate-300 px-3 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+                        @error('customerName') <p class="text-[11px] text-rose-600 font-semibold mt-0.5">{{ $message }}</p> @enderror
                     </div>
                     <div>
                         <input wire:model.live.debounce.300ms="customerContact" type="text" placeholder="Contact #"
+                            inputmode="tel"
+                            x-on:keydown="if(!/[0-9+\-\s()]/.test($event.key) && !['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Enter'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                             @readonly($isCollectingBalance)
                             class="w-full h-9 rounded border border-slate-300 px-3 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
+                        @error('customerContact') <p class="text-[11px] text-rose-600 font-semibold mt-0.5">{{ $message }}</p> @enderror
                     </div>
                 </div>
             </div>
@@ -860,7 +977,9 @@ new #[Layout('layouts.app')] class extends Component {
                             {{ $discountMode === 'percentage' ? 'Custom Rate:' : 'Custom Amount:' }}
                         </label>
                         <div class="relative flex-1">
-                            <input wire:model.live.debounce.300ms="discountValue" id="discountValue" type="number" step="0.5" min="0"
+                            <input wire:model.live.debounce.300ms="discountValue" id="discountValue" type="number" step="0.5" min="0" max="999999.99"
+                                inputmode="decimal"
+                                x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                 class="w-full h-8 rounded border border-slate-300 pl-2.5 pr-7 text-xs tabular-nums text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
                             <span class="absolute inset-y-0 right-0 flex items-center pr-2.5 pointer-events-none text-xs text-slate-400 font-bold">
                                 {{ $discountMode === 'percentage' ? '%' : '₱' }}
@@ -929,15 +1048,28 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
 
                 @if ($isCollectingBalance && $collectMixSale)
+                    @php
+                        $downpaymentPaid = (float) $collectMixSale->downpayment_amount;
+                        $finalOrderTotal = (float) $collectMixSale->total;
+                        $excessDownpayment = max(0, round($downpaymentPaid - $finalOrderTotal, 2));
+                    @endphp
                     <div class="border-t border-dashed border-slate-300 pt-2 space-y-1">
                         <div class="flex justify-between text-emerald-700 font-semibold">
                             <span>Downpayment Previously Paid:</span>
                             <span class="tabular-nums font-bold">-{{ $currency::format($collectMixSale->downpayment_amount) }}</span>
                         </div>
-                        <div class="flex justify-between text-slate-900 font-bold text-sm">
-                            <span>Remaining Balance Due:</span>
-                            <span class="tabular-nums text-base font-black text-slate-900">{{ $currency::format($collectMixSale->balance_due) }}</span>
-                        </div>
+                        @if ($excessDownpayment > 0)
+                            <div class="flex justify-between text-emerald-700 font-bold text-sm">
+                                <span>Change Refund from Downpayment:</span>
+                                <span class="tabular-nums text-base font-black text-emerald-700">{{ $currency::format($excessDownpayment) }}</span>
+                            </div>
+                            <p class="text-[11px] text-emerald-700 font-medium">Downpayment exceeds final formula price. Customer is owed {{ $currency::format($excessDownpayment) }} change.</p>
+                        @else
+                            <div class="flex justify-between text-slate-900 font-bold text-sm">
+                                <span>Remaining Balance Due:</span>
+                                <span class="tabular-nums text-base font-black text-slate-900">{{ $currency::format($collectMixSale->balance_due) }}</span>
+                            </div>
+                        @endif
                     </div>
                 @elseif ($hasCustomMix)
                     <div class="border-t border-dashed border-slate-300 pt-2 space-y-1">
@@ -970,7 +1102,9 @@ new #[Layout('layouts.app')] class extends Component {
                                 </button>
                             </div>
                         </div>
-                        <input wire:model.live.debounce.150ms="downpaymentAmount" id="downpaymentAmount" type="number" step="0.01" min="1"
+                        <input wire:model.live.debounce.150ms="downpaymentAmount" id="downpaymentAmount" type="number" step="0.01" min="1" max="999999.99"
+                            inputmode="decimal"
+                            x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                             placeholder="0.00"
                             class="w-full h-9 rounded border border-slate-300 px-3 text-sm tabular-nums font-bold text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
                         @error('downpaymentAmount')
@@ -983,7 +1117,9 @@ new #[Layout('layouts.app')] class extends Component {
                     <label for="tenderedAmount" class="block text-xs font-bold text-slate-900">
                         Cash Tendered (₱) <span class="text-rose-600">*</span>
                     </label>
-                    <input wire:model.live.debounce.150ms="tenderedAmount" id="tenderedAmount" type="number" step="0.01" min="0"
+                    <input wire:model.live.debounce.150ms="tenderedAmount" id="tenderedAmount" type="number" step="0.01" min="0" max="999999.99"
+                        inputmode="decimal"
+                        x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                         placeholder="0.00" autofocus
                         class="w-full h-9 rounded border border-slate-300 px-3 text-sm tabular-nums font-bold text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
                     @error('tenderedAmount')
@@ -991,16 +1127,16 @@ new #[Layout('layouts.app')] class extends Component {
                     @enderror
                 </div>
 
-                @if ($isCollectingBalance && $collectMixSale)
-                    @php
-                        $exactBal = (float) $collectMixSale->balance_due;
-                        $presets = array_unique(array_filter([
-                            $exactBal,
-                            ceil($exactBal / 100) * 100,
-                            ceil($exactBal / 500) * 500,
-                            ceil($exactBal / 1000) * 1000,
-                        ], fn($val) => $val >= $exactBal));
-                    @endphp
+                @php
+                    $exactReq = $this->requiredAmount();
+                    $presets = array_unique(array_filter([
+                        $exactReq,
+                        ceil($exactReq / 100) * 100,
+                        ceil($exactReq / 500) * 500,
+                        ceil($exactReq / 1000) * 1000,
+                    ], fn($val) => $val >= $exactReq && $val > 0));
+                @endphp
+                @if (count($presets) > 0)
                     <div class="flex items-center gap-1.5 flex-wrap">
                         @foreach ($presets as $pVal)
                             <button type="button" wire:click="$set('tenderedAmount', '{{ $pVal }}')"
@@ -1026,7 +1162,11 @@ new #[Layout('layouts.app')] class extends Component {
                 >
                     <span wire:loading.remove wire:target="completeSale">
                         @if ($isCollectingBalance)
-                            Confirm Balance Payment &amp; Release Paint
+                            @if ($collectMixSale && (float) $collectMixSale->downpayment_amount > (float) $collectMixSale->total)
+                                Release Paint &amp; Return Change ({{ $currency::format($this->changeDue()) }})
+                            @else
+                                Confirm Balance Payment &amp; Release Paint
+                            @endif
                         @elseif ($hasCustomMix)
                             Confirm Downpayment &amp; Queue Mix
                         @else

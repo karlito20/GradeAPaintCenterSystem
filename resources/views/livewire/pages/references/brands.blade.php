@@ -63,7 +63,11 @@ new #[Layout('layouts.app')] class extends Component {
             'name' => ['required', 'string', 'max:100', $this->editingId ? 'unique:brands,name,' . $this->editingId : 'unique:brands,name'],
         ];
 
-        $this->validate($rules);
+        $this->validate($rules, [
+            'name.required' => 'The brand name is required.',
+            'name.max' => 'The brand name cannot exceed 100 characters.',
+            'name.unique' => 'This brand name already exists.',
+        ]);
 
         if ($this->editingId) {
             $brand = Brand::findOrFail($this->editingId);
@@ -440,6 +444,7 @@ new #[Layout('layouts.app')] class extends Component {
                             Brand Name <span class="text-rose-500">*</span>
                         </label>
                         <input wire:model="name" id="modal_brand_name" type="text"
+                            maxlength="100"
                             placeholder="e.g. Boysen, Davies, Nippon Paint"
                             class="w-full rounded border-slate-300 text-xs focus:border-slate-500 focus:ring-slate-500"
                             required autofocus />

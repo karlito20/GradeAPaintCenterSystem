@@ -11,7 +11,6 @@ class InventoryMovement extends Model
     protected $fillable = [
         'product_id',
         'location',
-        'container_id',
         'user_id',
         'type',
         'quantity_change',
@@ -45,10 +44,5 @@ class InventoryMovement extends Model
     public function reference(): MorphTo
     {
         return $this->morphTo();
-    }
-
-    public function container(): BelongsTo
-    {
-        return $this->belongsTo(Container::class);
     }
 }

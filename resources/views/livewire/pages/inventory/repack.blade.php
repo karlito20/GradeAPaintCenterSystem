@@ -39,8 +39,16 @@ new #[Layout('layouts.app')] class extends Component {
             'sourceProductId' => 'required|exists:products,id',
             'targetProductId' => 'required|exists:products,id|different:sourceProductId',
             'location' => 'required|in:storage,storefront',
-            'quantityToCreate' => 'required|integer|min:1',
-            'notes' => 'nullable|string'
+            'quantityToCreate' => 'required|integer|min:1|max:99999',
+            'notes' => 'nullable|string|max:500'
+        ], [
+            'sourceProductId.required' => 'Please select a source product.',
+            'targetProductId.required' => 'Please select a target product.',
+            'targetProductId.different' => 'Target product cannot be the same as the source product.',
+            'quantityToCreate.required' => 'Please enter the quantity to create.',
+            'quantityToCreate.integer' => 'Quantity must be a whole number.',
+            'quantityToCreate.min' => 'Quantity must be at least 1.',
+            'quantityToCreate.max' => 'Quantity cannot exceed 99,999.',
         ]);
 
         $targetPackageSize = (float) $this->targetProduct->package_size;
@@ -203,7 +211,10 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <div>
                     <label class="block font-bold mb-1">Quantity of {{ $targetProduct->name }} to Create <span class="text-rose-500">*</span></label>
-                    <input wire:model="quantityToCreate" type="number" step="1" min="1" class="w-full rounded border-slate-300 text-xs" required>
+                    <input wire:model="quantityToCreate" type="number" step="1" min="1" max="99999"
+                        inputmode="numeric"
+                        x-on:keydown="if(['e','E','+','-','.'].includes($event.key)) $event.preventDefault()"
+                        class="w-full rounded border-slate-300 text-xs tabular-nums" required>
                     @error('quantityToCreate') <span class="text-rose-600 block mt-1">{{ $message }}</span> @enderror
                 </div>
             </div>

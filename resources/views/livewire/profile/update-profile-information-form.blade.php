@@ -28,7 +28,9 @@ new class extends Component {
 
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255'],
-            'username' => ['required', 'string', 'max:255', Rule::unique(User::class)->ignore($user->id)],
+            'username' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z0-9_.-]+$/', Rule::unique(User::class)->ignore($user->id)],
+        ], [
+            'username.regex' => 'Username can only contain letters, numbers, dashes, underscores, and dots.',
         ]);
 
         $user->fill($validated);

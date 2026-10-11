@@ -258,16 +258,28 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function saveQuotationChanges(): void
     {
-        $this->validate([
+        $rules = [
             'editCustomerName' => ['nullable', 'string', 'max:200'],
-            'editCustomerContact' => ['nullable', 'string', 'max:100'],
+            'editCustomerContact' => ['nullable', 'string', 'max:50'],
             'editValidUntil' => ['nullable', 'date'],
             'editNotes' => ['nullable', 'string', 'max:1000'],
             'editStatus' => ['required', 'in:draft,sent,accepted,cancelled'],
             'editDiscountPercentage' => ['required', 'numeric', 'min:0', 'max:100'],
             'editItems' => ['required', 'array', 'min:1'],
-            'editItems.*.quantity' => ['required', 'numeric', 'min:0.01'],
-            'editItems.*.unit_price' => ['required', 'numeric', 'min:0'],
+            'editItems.*.quantity' => ['required', 'numeric', 'min:0.01', 'max:99999.99'],
+            'editItems.*.unit_price' => ['required', 'numeric', 'min:0', 'max:999999.99'],
+        ];
+
+        if (trim($this->editCustomerContact) !== '') {
+            $rules['editCustomerContact'][] = 'regex:/^[0-9+\-\s()]{7,30}$/';
+        }
+
+        $this->validate($rules, [
+            'editCustomerContact.regex' => 'Contact number must contain only numbers, dashes, spaces, or parentheses.',
+            'editItems.min' => 'Please add at least one item to the quotation.',
+            'editItems.*.quantity.min' => 'Quantity must be greater than zero.',
+            'editItems.*.quantity.max' => 'Quantity cannot exceed 99,999.99.',
+            'editItems.*.quantity.numeric' => 'Quantity must be a valid number.',
         ]);
 
         $subtotal = $this->editSubtotal;
@@ -1084,11 +1096,15 @@ new #[Layout('layouts.app')] class extends Component {
                             <label class="block text-[11px] font-semibold text-slate-700 mb-1">Customer / Client Name</label>
                             <input wire:model="editCustomerName" type="text" placeholder="e.g. John Doe / Davao Builders"
                                 class="w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                            @error('editCustomerName') <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p> @enderror
                         </div>
                         <div>
                             <label class="block text-[11px] font-semibold text-slate-700 mb-1">Contact (Phone / Email)</label>
                             <input wire:model="editCustomerContact" type="text" placeholder="e.g. 0917-123-4567"
+                                inputmode="tel"
+                                x-on:keydown="if(!/[0-9+\-\s()]/.test($event.key) && !['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Enter'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                 class="w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                            @error('editCustomerContact') <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p> @enderror
                         </div>
                         <div>
                             <label class="block text-[11px] font-semibold text-slate-700 mb-1">Valid Until Date</label>
@@ -1217,8 +1233,13 @@ new #[Layout('layouts.app')] class extends Component {
                                                 {{ $item['package'] }}
                                             </td>
                                             <td class="px-2.5 py-2 text-center">
-                                                <input wire:model.live.debounce.250ms="editItems.{{ $index }}.quantity" type="number" step="1" min="1"
+                                                <input wire:model.live.debounce.250ms="editItems.{{ $index }}.quantity" type="number" step="1" min="1" max="99999.99"
+                                                    inputmode="decimal"
+                                                    x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                                     class="w-20 text-center rounded border border-slate-300 px-1.5 py-1 text-xs tabular-nums text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
+                                                @error('editItems.' . $index . '.quantity')
+                                                    <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p>
+                                                @enderror
                                             </td>
                                             <td class="px-2.5 py-2 text-right font-medium text-slate-700 tabular-nums">
                                                 {{ $currency::format($item['unit_price']) }}
@@ -1243,6 +1264,9 @@ new #[Layout('layouts.app')] class extends Component {
                                 </tbody>
                             </table>
                         </div>
+                        @error('editItems')
+                            <p class="text-rose-600 text-[11px] font-semibold mt-1">{{ $message }}</p>
+                        @enderror
                     </div>
 
                     <!-- Notes and Totals Section (No discounts in quotation modal) -->

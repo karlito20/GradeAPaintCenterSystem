@@ -2,10 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\Container;
 use App\Models\Inventory;
 use App\Models\InventoryMovement;
-use App\Models\InventoryTransfer;
 use App\Models\Product;
 use App\Models\Sale;
 use Illuminate\Support\Facades\DB;
@@ -41,67 +39,45 @@ class InventoryService
     /**
      * Transfer stock from one location to another.
      */
-    public function transferStock(Product $product, string $fromLocation, string $toLocation, float $quantity, ?Container $container = null, ?int $userId = null, ?string $notes = null): InventoryTransfer
+    public function transferStock(Product $product, string $fromLocation, string $toLocation, float $quantity, ?int $userId = null, ?string $notes = null): void
     {
-        return DB::transaction(function () use ($product, $fromLocation, $toLocation, $quantity, $container, $userId, $notes) {
+        DB::transaction(function () use ($product, $fromLocation, $toLocation, $quantity, $userId, $notes) {
             $fromInventory = $this->updateInventoryBalance($product->id, $fromLocation, -$quantity);
             $toInventory = $this->updateInventoryBalance($product->id, $toLocation, $quantity);
 
-            if ($container) {
-                $container->location = $toLocation;
-                $container->save();
+            $refText = 'Transferred from '.ucfirst($fromLocation).' to '.ucfirst($toLocation);
+            if (! empty($notes)) {
+                $refText .= ' ('.Str::limit($notes, 30).')';
             }
-
-            $transfer = InventoryTransfer::create([
-                'user_id' => $userId,
-                'product_id' => $product->id,
-                'container_id' => $container?->id,
-                'from_location' => $fromLocation,
-                'to_location' => $toLocation,
-                'quantity' => $quantity,
-                'notes' => $notes,
-            ]);
 
             $this->logMovement([
                 'product_id' => $product->id,
                 'location' => $fromLocation,
-                'container_id' => $container?->id,
                 'user_id' => $userId,
                 'type' => 'transfer_out',
                 'quantity_change' => -$quantity,
                 'quantity_before' => $fromInventory->quantity + $quantity,
                 'quantity_after' => $fromInventory->quantity,
-                'reference_type' => InventoryTransfer::class,
-                'reference_id' => $transfer->id,
+                'reference_type' => Product::class,
+                'reference_id' => $product->id,
+                'reference_text' => $refText,
+                'reason' => $notes,
             ]);
 
             $this->logMovement([
                 'product_id' => $product->id,
                 'location' => $toLocation,
-                'container_id' => $container?->id,
                 'user_id' => $userId,
                 'type' => 'transfer_in',
                 'quantity_change' => $quantity,
                 'quantity_before' => $toInventory->quantity - $quantity,
                 'quantity_after' => $toInventory->quantity,
-                'reference_type' => InventoryTransfer::class,
-                'reference_id' => $transfer->id,
+                'reference_type' => Product::class,
+                'reference_id' => $product->id,
+                'reference_text' => $refText,
+                'reason' => $notes,
             ]);
-
-            return $transfer;
         });
-    }
-
-    /**
-     * Generate unique container identifier.
-     */
-    public function generateContainerIdentifier(Product $product): string
-    {
-        do {
-            $identifier = 'CAN-'.strtoupper(Str::random(6));
-        } while (Container::where('identifier', $identifier)->exists());
-
-        return $identifier;
     }
 
     /**

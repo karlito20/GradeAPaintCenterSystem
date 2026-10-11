@@ -82,8 +82,17 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $validated = $this->validate([
             'productId' => ['required', 'integer', Rule::exists('products', 'id')],
-            'quantity' => ['required', 'numeric', 'gt:0'],
-            'unitCost' => ['nullable', 'numeric', 'min:0'],
+            'quantity' => ['required', 'numeric', 'gt:0', 'max:999999.99'],
+            'unitCost' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+        ], [
+            'productId.required' => 'Please select a product.',
+            'quantity.required' => 'Quantity is required.',
+            'quantity.numeric' => 'Quantity must be a valid number.',
+            'quantity.gt' => 'Quantity must be greater than zero.',
+            'quantity.max' => 'Quantity cannot exceed 999,999.99.',
+            'unitCost.numeric' => 'Unit cost must be a valid number.',
+            'unitCost.min' => 'Unit cost cannot be negative.',
+            'unitCost.max' => 'Unit cost cannot exceed 999,999.99.',
         ]);
 
         $prodId = (int) $validated['productId'];
@@ -135,10 +144,13 @@ new #[Layout('layouts.app')] class extends Component {
             'notes' => ['nullable', 'string', 'max:500'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'exists:products,id'],
-            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
-            'items.*.unit_cost' => ['nullable', 'numeric', 'min:0'],
+            'items.*.quantity' => ['required', 'numeric', 'gt:0', 'max:999999.99'],
+            'items.*.unit_cost' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
         ], [
             'reference.required' => 'The DR number is required.',
+            'items.min' => 'Add at least one product item to stock in.',
+            'items.*.quantity.gt' => 'Quantity must be greater than zero.',
+            'items.*.quantity.max' => 'Quantity cannot exceed 999,999.99.',
         ]);
 
         DB::transaction(function (): void {
@@ -573,6 +585,9 @@ new #[Layout('layouts.app')] class extends Component {
                                 type="number" 
                                 step="0.01" 
                                 min="0.01" 
+                                max="999999.99"
+                                inputmode="decimal"
+                                x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                 placeholder="e.g. 10" 
                                 class="w-full text-xs tabular-nums text-slate-900 rounded border-slate-300 focus:border-slate-500 focus:ring-0" 
                             />

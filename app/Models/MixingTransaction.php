@@ -47,9 +47,4 @@ class MixingTransaction extends Model
     {
         return $this->hasMany(MixingComponent::class);
     }
-
-    public function containerUsages(): HasMany
-    {
-        return $this->hasMany(MixingContainerUsage::class);
-    }
 }

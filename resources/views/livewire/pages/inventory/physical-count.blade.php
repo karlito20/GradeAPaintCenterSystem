@@ -168,7 +168,11 @@ new #[Layout('layouts.app')] class extends Component {
         $this->validate([
             'countedAt' => ['required', 'date'],
             'counts' => ['required', 'array'],
-            'counts.*' => ['nullable', 'numeric', 'min:0'],
+            'counts.*' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+        ], [
+            'counts.*.numeric' => 'Count must be a valid number.',
+            'counts.*.min' => 'Count cannot be negative.',
+            'counts.*.max' => 'Count cannot exceed 999,999.99.',
         ]);
 
         $this->showConfirmationModal = true;
@@ -184,7 +188,11 @@ new #[Layout('layouts.app')] class extends Component {
         $this->validate([
             'countedAt' => ['required', 'date'],
             'counts' => ['required', 'array'],
-            'counts.*' => ['nullable', 'numeric', 'min:0'],
+            'counts.*' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
+        ], [
+            'counts.*.numeric' => 'Count must be a valid number.',
+            'counts.*.min' => 'Count cannot be negative.',
+            'counts.*.max' => 'Count cannot exceed 999,999.99.',
         ]);
 
         $itemCount = 0;
@@ -734,8 +742,13 @@ new #[Layout('layouts.app')] class extends Component {
                                 </td>
                                 <td class="border border-slate-200 px-2 py-1 bg-slate-50/40 text-center">
                                     <input wire:model.live.debounce.300ms="counts.{{ $product->id }}" type="number"
-                                        step="0.01" min="0" placeholder="Skip"
+                                        step="0.01" min="0" max="999999.99" placeholder="Skip"
+                                        inputmode="decimal"
+                                        x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                         class="w-24 text-center rounded border border-slate-300 py-1 px-2 text-xs tabular-nums font-bold focus:border-[#00a3cc] focus:ring-[#00a3cc] {{ $hasCount ? ($variance == 0 ? 'text-emerald-700 border-emerald-300' : ($variance < 0 ? 'text-rose-700 border-rose-300' : 'text-blue-700 border-blue-300')) : '' }}" />
+                                    @error('counts.' . $product->id)
+                                        <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p>
+                                    @enderror
                                 </td>
                                 <td
                                     class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold whitespace-nowrap">
