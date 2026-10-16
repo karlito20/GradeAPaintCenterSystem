@@ -551,9 +551,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         if ($discountAmt > 0) {
-            $rules['discountReason'] = ['required', 'string', 'min:3', 'max:255'];
-            $messages['discountReason.required'] = 'A discount reason is required when a discount is applied.';
-            $messages['discountReason.min'] = 'Please provide a clear discount reason (at least 3 characters).';
+            $rules['discountReason'] = ['nullable', 'string', 'max:255'];
 
             if (! $this->discountAuthorized && ! (app()->runningUnitTests() && auth()->user()?->isAdminOrSuperadmin())) {
                 $this->addError('discountValue', 'Administrator password authorization is required to apply discounts.');
@@ -989,19 +987,6 @@ new #[Layout('layouts.app')] class extends Component {
                     @error('discountValue') <p class="text-[11px] text-rose-600 font-semibold">{{ $message }}</p> @enderror
 
                     @if ($this->discountAmount() > 0)
-                        <!-- Mandatory Reason (Inline label) -->
-                        <div class="flex items-center gap-2 pt-1">
-                            <label for="discountReason" class="text-xs font-semibold text-slate-700 whitespace-nowrap">
-                                Reason <span class="text-rose-600">*</span>:
-                            </label>
-                            <input wire:model.live.debounce.300ms="discountReason" id="discountReason" type="text"
-                                placeholder="e.g. Contractor loyalty, Senior ID..."
-                                class="flex-1 h-8 rounded border border-slate-300 px-2.5 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
-                        </div>
-                        @error('discountReason')
-                            <p class="text-[11px] text-rose-600 font-medium">{{ $message }}</p>
-                        @enderror
-
                         <!-- Authorization Status Indicator (Flat, no card container) -->
                         <div class="pt-1">
                             @if ($discountAuthorized)

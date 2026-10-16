@@ -8,6 +8,7 @@ use App\Models\InventoryMovement;
 use App\Models\MixingTransaction;
 use App\Models\PackageUnit;
 use App\Models\Product;
+use App\Models\Quotation;
 use App\Models\Sale;
 use App\Models\User;
 use Livewire\Volt\Volt;
@@ -308,4 +309,95 @@ test('custom mix checkout calculates extra change when customer tenders cash dur
         ->and((float) $sale->payment_amount)->toBe(1050.0)
         ->and($sale->payment_status)->toBe('paid')
         ->and($tx->fresh()->status)->toBe('completed');
+});
+
+test('sales history table displays status without balance sublabel', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+    $sale = Sale::create([
+        'user_id' => $user->id,
+        'customer_name' => 'Juan Luna',
+        'invoice_number' => 'SALE-TEST-STATUS-1',
+        'sold_at' => now(),
+        'type' => 'normal',
+        'subtotal' => 1000.0,
+        'total' => 1000.0,
+        'downpayment_amount' => 500.0,
+        'balance_due' => 500.0,
+        'payment_status' => 'downpayment_paid',
+        'payment_method' => 'cash',
+        'payment_amount' => 500.0,
+    ]);
+
+    Volt::actingAs($user)
+        ->test('pages.sales.history')
+        ->assertSee('Downpayment')
+        ->assertDontSee('Bal:');
+});
+
+test('custom mixes table displays separate date and time, ready status, and no contact column', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+    $brand = Brand::create(['name' => 'Davies Test', 'active' => true]);
+    $sale = Sale::create([
+        'user_id' => $user->id,
+        'customer_name' => 'Maria Clara',
+        'customer_contact' => '09123456789',
+        'invoice_number' => 'SALE-MIX-TABLE-1',
+        'sold_at' => now(),
+        'type' => 'mixed',
+        'subtotal' => 600.0,
+        'total' => 600.0,
+        'downpayment_amount' => 300.0,
+        'balance_due' => 300.0,
+        'payment_status' => 'downpayment_paid',
+        'payment_method' => 'cash',
+        'payment_amount' => 300.0,
+    ]);
+
+    MixingTransaction::create([
+        'sale_id' => $sale->id,
+        'brand_id' => $brand->id,
+        'custom_color' => 'Ocean Sky Blue',
+        'resulting_quantity' => 2.0,
+        'resulting_unit' => 'gal',
+        'price_basis' => 600.0,
+        'status' => 'mixed',
+    ]);
+
+    Volt::actingAs($user)
+        ->test('pages.sales.custom-mixes')
+        ->assertSee('Ready')
+        ->assertSee('text-sky-700')
+        ->assertDontSee('Ready for Pickup')
+        ->assertDontSee('Contact #')
+        ->assertSee('SALE-MIX-TABLE-1')
+        ->assertSee(route('sales.receipt', $sale));
+});
+
+test('quotations table displays separate date and time with standardized widths and currency format', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+    $quote = Quotation::create([
+        'user_id' => $user->id,
+        'customer_name' => 'Diego Silang',
+        'quote_number' => 'QT-TEST-ALIGN-1',
+        'status' => 'draft',
+        'subtotal' => 1500.0,
+        'total' => 1500.0,
+        'valid_until' => now()->addDays(7),
+    ]);
+
+    Volt::actingAs($user)
+        ->test('pages.sales.quotations')
+        ->assertSee('QT-TEST-ALIGN-1')
+        ->assertSee($quote->created_at->format('Y-m-d'))
+        ->assertSee($quote->created_at->format('h:i A'))
+        ->assertSee($quote->valid_until->format('Y-m-d'))
+        ->assertSee('₱1,500.00');
+});
+
+test('pos page filter inputs use rounded border matching sales module', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+
+    Volt::actingAs($user)
+        ->test('pages.sales.index')
+        ->assertSee('class="w-full h-9 rounded border border-slate-300 pl-9 pr-3 text-xs bg-white text-slate-900', false);
 });

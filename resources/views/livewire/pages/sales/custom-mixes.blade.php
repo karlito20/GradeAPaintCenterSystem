@@ -457,7 +457,7 @@ new #[Layout('layouts.app')] class extends Component {
                 <select wire:model.live="statusFilter" class="w-full h-9 rounded border border-slate-300 bg-white pl-2.5 pr-8 text-xs text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="all">All Statuses</option>
                     <option value="downpaid">Awaiting Mix</option>
-                    <option value="mixed">Ready for Pickup</option>
+                    <option value="mixed">Ready</option>
                     <option value="completed">Completed</option>
                 </select>
             </div>
@@ -505,16 +505,16 @@ new #[Layout('layouts.app')] class extends Component {
         <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
             <div class="overflow-x-auto w-full">
                 <table class="w-full border-collapse border border-slate-300 text-xs">
-                <thead class="bg-slate-100 uppercase text-[10px] font-bold text-slate-700 tracking-wider">
+                <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                     <tr>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">Invoice #</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-32 whitespace-nowrap">Date / Time</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-32 whitespace-nowrap">Invoice #</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">Date</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24 whitespace-nowrap">Time</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[120px] whitespace-nowrap">Customer</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[110px] whitespace-nowrap">Contact #</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24 whitespace-nowrap">Brand</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[130px]">Color Name</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[130px] whitespace-nowrap">Color Name</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-center w-20 whitespace-nowrap">Volume</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">Total</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-right w-28 whitespace-nowrap font-bold text-slate-900">Total</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">Downpayment</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">Balance</th>
                         <th class="border border-slate-300 px-2.5 py-1.5 text-center w-28 whitespace-nowrap">Status</th>
@@ -530,54 +530,81 @@ new #[Layout('layouts.app')] class extends Component {
                             $isCompleted = in_array($mix->status, ['completed', 'released']);
                         @endphp
                         <tr 
-                            class="hover:bg-slate-50 transition cursor-default" 
+                            class="hover:bg-slate-50 transition-colors cursor-default" 
                             wire:key="mix-{{ $mix->id }}"
                             @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $mix->id }}, saleId: {{ $sale?->id ?? 'null' }}, status: '{{ $mix->status }}', isDownpaid: {{ $isDownpaid ? 'true' : 'false' }}, isMixed: {{ $isMixed ? 'true' : 'false' }}, isCompleted: {{ $isCompleted ? 'true' : 'false' }}, invoice: '{{ $sale?->invoice_number }}', receiptUrl: '{{ route('sales.receipt', ['sale' => $sale?->id ?? 0]) }}' })"
                         >
-                            <td class="border border-slate-200 px-2.5 py-1.5 font-mono font-bold text-slate-900 whitespace-nowrap">
-                                {{ $sale?->invoice_number ?? '—' }}
+                            <!-- Invoice # -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 font-mono font-medium text-slate-900 tabular-nums whitespace-nowrap">
+                                @if ($sale)
+                                    <a href="{{ route('sales.receipt', $sale) }}" class="text-[#008fb3] hover:underline font-bold">
+                                        {{ $sale->invoice_number }}
+                                    </a>
+                                @else
+                                    <span class="text-slate-400">—</span>
+                                @endif
                             </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 whitespace-nowrap">
-                                {{ $sale?->sold_at ? $sale->sold_at->format('M d, Y h:i A') : '—' }}
+
+                            <!-- Date Column -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-700 whitespace-nowrap">
+                                {{ $sale?->sold_at ? $sale->sold_at->format('Y-m-d') : '—' }}
                             </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 font-medium text-slate-900 whitespace-nowrap">
+
+                            <!-- Time Column -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-500 whitespace-nowrap">
+                                {{ $sale?->sold_at ? $sale->sold_at->format('h:i A') : '—' }}
+                            </td>
+
+                            <!-- Customer -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-800 whitespace-nowrap">
                                 {{ $sale?->customer_name ?? 'Walk-in' }}
                             </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 tabular-nums whitespace-nowrap">
-                                {{ $sale?->customer_contact ?: '—' }}
-                            </td>
+
+                            <!-- Brand -->
                             <td class="border border-slate-200 px-2.5 py-1.5 text-slate-700 whitespace-nowrap">
                                 {{ $mix->brand?->name ?? '—' }}
                             </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 font-bold text-slate-900">
+
+                            <!-- Color Name -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 font-medium text-slate-900 whitespace-nowrap">
                                 {{ $mix->custom_color }}
                             </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-center font-medium text-slate-900 whitespace-nowrap">
+
+                            <!-- Volume -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-center tabular-nums text-slate-700 whitespace-nowrap">
                                 {{ rtrim(rtrim(number_format((float) $mix->resulting_quantity, 2), '0'), '.') }} {{ $mix->resulting_unit }}
                             </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums whitespace-nowrap font-semibold text-slate-900">
+
+                            <!-- Total -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900 whitespace-nowrap">
                                 @if ($isDownpaid)
                                     <span class="text-slate-400 italic font-normal text-[11px]">Pending mix</span>
                                 @else
                                     {{ $currency::format($sale?->total ?? 0) }}
                                 @endif
                             </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums whitespace-nowrap text-slate-700">
+
+                            <!-- Downpayment -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
                                 {{ $currency::format($sale?->downpayment_amount ?? 0) }}
                             </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums whitespace-nowrap text-slate-700">
+
+                            <!-- Balance -->
+                            <td class="border border-slate-200 px-2.5 py-1.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
                                 @if ($isDownpaid)
                                     <span class="text-slate-400 italic text-[11px]">TBD</span>
                                 @elseif ((float) ($sale?->downpayment_amount ?? 0) > (float) ($sale?->total ?? 0))
-                                    <span class="">
+                                    <span>
                                         +{{ $currency::format((float) $sale->downpayment_amount - (float) $sale->total) }} 
                                     </span>
                                 @elseif ((float) ($sale?->balance_due ?? 0) > 0)
                                     <span class="font-medium text-slate-900">{{ $currency::format($sale->balance_due) }}</span>
                                 @else
-                                    <span class="text-slate-500">₱0.00</span>
+                                    <span class="text-slate-500">{{ $currency::format(0) }}</span>
                                 @endif
                             </td>
+
+                            <!-- Status -->
                             <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
                                 @if ($isDownpaid)
                                     <span class="text-[10px] font-bold uppercase tracking-wider text-amber-700">
@@ -585,7 +612,7 @@ new #[Layout('layouts.app')] class extends Component {
                                     </span>
                                 @elseif ($isMixed)
                                     <span class="text-[10px] font-bold uppercase tracking-wider text-sky-700">
-                                        Ready for Pickup
+                                        Ready
                                     </span>
                                 @else
                                     <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
@@ -593,9 +620,10 @@ new #[Layout('layouts.app')] class extends Component {
                                     </span>
                                 @endif
                             </td>
+
+                            <!-- Actions -->
                             <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
                                 <div class="inline-flex items-center gap-1.5 justify-center">
-                                    
                                     <button 
                                         @click.stop="contextMenu.openFromButton($event, { id: {{ $mix->id }}, saleId: {{ $sale?->id ?? 'null' }}, status: '{{ $mix->status }}', isDownpaid: {{ $isDownpaid ? 'true' : 'false' }}, isMixed: {{ $isMixed ? 'true' : 'false' }}, isCompleted: {{ $isCompleted ? 'true' : 'false' }}, invoice: '{{ $sale?->invoice_number }}', receiptUrl: '{{ route('sales.receipt', ['sale' => $sale?->id ?? 0]) }}' })" 
                                         type="button" 
@@ -613,8 +641,8 @@ new #[Layout('layouts.app')] class extends Component {
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="12" class="border border-slate-200 px-6 py-12 text-center text-slate-400">
-                                <p class="font-medium">No custom mix orders found.</p>
+                            <td colspan="12" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
+                                <p class="font-medium text-xs">No custom mix orders found.</p>
                                 <p class="text-[11px] mt-1 text-slate-400">Customer requests with downpayments will appear here.</p>
                             </td>
                         </tr>

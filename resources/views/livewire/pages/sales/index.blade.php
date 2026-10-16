@@ -946,27 +946,27 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class="relative flex-1">
                             <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                             <input wire:model.live.debounce.200ms="search" type="search" placeholder="Search product name or SKU..."
-                                class="w-full h-9 rounded-lg border-slate-300 pl-9 pr-3 text-xs text-slate-900 focus:border-slate-500 focus:ring-0 shadow-xs" />
+                                class="w-full h-9 rounded border border-slate-300 pl-9 pr-3 text-xs bg-white text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500" />
                         </div>
-                        <label class="h-9 inline-flex items-center gap-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 cursor-pointer select-none shadow-xs hover:bg-slate-50 transition">
+                        <label class="h-9 inline-flex items-center gap-2 px-3 rounded border border-slate-300 bg-white text-xs font-medium text-slate-700 cursor-pointer select-none hover:bg-slate-50 transition">
                             <input wire:model.live="availableOnly" type="checkbox" class="rounded border-slate-300 text-slate-900 focus:ring-0" />
                             <span>In Stock Only</span>
                         </label>
                     </div>
                     <div class="flex items-center gap-2">
-                        <select wire:model.live="brandId" class="flex-1 h-9 rounded-lg border-slate-300 text-xs px-2.5 focus:border-slate-500 focus:ring-0 shadow-xs bg-white text-slate-700">
+                        <select wire:model.live="brandId" class="flex-1 h-9 rounded border border-slate-300 text-xs px-2.5 focus:border-slate-500 focus:ring-1 focus:ring-slate-500 bg-white text-slate-700">
                             <option value="">All Brands</option>
                             @foreach ($brands as $b)
                                 <option value="{{ $b->id }}">{{ $b->name }}</option>
                             @endforeach
                         </select>
-                        <select wire:model.live="categoryId" class="flex-1 h-9 rounded-lg border-slate-300 text-xs px-2.5 focus:border-slate-500 focus:ring-0 shadow-xs bg-white text-slate-700">
+                        <select wire:model.live="categoryId" class="flex-1 h-9 rounded border border-slate-300 text-xs px-2.5 focus:border-slate-500 focus:ring-1 focus:ring-slate-500 bg-white text-slate-700">
                             <option value="">All Categories</option>
                             @foreach ($categories as $cat)
                                 <option value="{{ $cat->id }}">{{ $cat->name }}</option>
                             @endforeach
                         </select>
-                        <select wire:model.live="packageUnitId" class="flex-1 h-9 rounded-lg border-slate-300 text-xs px-2.5 focus:border-slate-500 focus:ring-0 shadow-xs bg-white text-slate-700">
+                        <select wire:model.live="packageUnitId" class="flex-1 h-9 rounded border border-slate-300 text-xs px-2.5 focus:border-slate-500 focus:ring-1 focus:ring-slate-500 bg-white text-slate-700">
                             <option value="">All Units</option>
                             @foreach ($packageUnits as $u)
                                 <option value="{{ $u->id }}">{{ $u->abbreviation }}</option>

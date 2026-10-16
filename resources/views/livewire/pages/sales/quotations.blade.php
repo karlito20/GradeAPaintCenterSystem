@@ -130,7 +130,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->editDiscountPercentage = (string) ($quote->discount_percentage ?? '0');
         $this->editDiscountType = (string) ($quote->discount_type ?? 'none');
         $this->editDiscountReason = (string) ($quote->discount_reason ?? '');
-        
+
         $this->editItems = [];
         foreach ($quote->items as $item) {
             $this->editItems[] = [
@@ -174,26 +174,27 @@ new #[Layout('layouts.app')] class extends Component {
             ->with(['brand', 'packageUnit'])
             ->where('active', true)
             ->where(function ($q) use ($term) {
-                $q->where('name', 'like', $term)
-                  ->orWhere('sku', 'like', $term);
+                $q->where('name', 'like', $term)->orWhere('sku', 'like', $term);
             })
             ->limit(6)
             ->get()
-            ->map(fn($p) => [
-                'id' => $p->id,
-                'sku' => $p->sku,
-                'name' => $p->name,
-                'brand' => $p->brand?->name ?? '—',
-                'package' => $p->formattedPackage(),
-                'price' => (float) $p->selling_price,
-            ])
+            ->map(
+                fn($p) => [
+                    'id' => $p->id,
+                    'sku' => $p->sku,
+                    'name' => $p->name,
+                    'brand' => $p->brand?->name ?? '—',
+                    'package' => $p->formattedPackage(),
+                    'price' => (float) $p->selling_price,
+                ],
+            )
             ->toArray();
     }
 
     public function addProductToEdit(int $productId): void
     {
         $p = Product::with(['brand', 'packageUnit'])->find($productId);
-        if (! $p) {
+        if (!$p) {
             return;
         }
 
@@ -285,7 +286,7 @@ new #[Layout('layouts.app')] class extends Component {
         $subtotal = $this->editSubtotal;
         $total = $subtotal;
 
-        if (! $this->editingQuotationId) {
+        if (!$this->editingQuotationId) {
             $quote = DB::transaction(function () use ($subtotal, $total) {
                 $q = Quotation::create([
                     'user_id' => auth()->id(),
@@ -399,7 +400,7 @@ new #[Layout('layouts.app')] class extends Component {
     public function updateStatus(int $id, string $newStatus): void
     {
         $allowed = ['draft', 'sent', 'accepted', 'cancelled'];
-        if (! in_array($newStatus, $allowed, true)) {
+        if (!in_array($newStatus, $allowed, true)) {
             return;
         }
 
@@ -445,7 +446,7 @@ new #[Layout('layouts.app')] class extends Component {
                 ]);
             } else {
                 $product = $item->product;
-                if (! $product) {
+                if (!$product) {
                     continue;
                 }
                 $key = 'product:' . $product->id;
@@ -494,9 +495,7 @@ new #[Layout('layouts.app')] class extends Component {
             ->when($this->dateTo, fn($q) => $q->whereDate('created_at', '<=', $this->dateTo))
             ->latest();
 
-        $selectedQuotation = $this->viewingQuotationId
-            ? Quotation::with(['user', 'items.product.packageUnit', 'convertedSale', 'discountAuthorizer'])->find($this->viewingQuotationId)
-            : null;
+        $selectedQuotation = $this->viewingQuotationId ? Quotation::with(['user', 'items.product.packageUnit', 'convertedSale', 'discountAuthorizer'])->find($this->viewingQuotationId) : null;
 
         $stats = [
             'total' => Quotation::count(),
@@ -512,8 +511,7 @@ new #[Layout('layouts.app')] class extends Component {
             ->when($this->productSearch, function ($q) {
                 $term = '%' . trim($this->productSearch) . '%';
                 $q->where(function ($sub) use ($term) {
-                    $sub->where('name', 'like', $term)
-                        ->orWhere('sku', 'like', $term);
+                    $sub->where('name', 'like', $term)->orWhere('sku', 'like', $term);
                 });
             })
             ->when($this->catalogBrandId, fn($q) => $q->where('brand_id', $this->catalogBrandId))
@@ -535,49 +533,43 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<div 
-    x-data="{
-        contextMenu: {
-            open: false,
-            x: 0,
-            y: 0,
-            item: null,
-            openAt(x, y, item) {
-                this.item = item;
-                this.x = x;
-                this.y = y;
-                this.open = true;
-                this.$nextTick(() => {
-                    const el = this.$refs.floatingMenu;
-                    if (!el) return;
-                    const r = el.getBoundingClientRect();
-                    if (this.x + r.width > window.innerWidth - 8) {
-                        this.x = Math.max(8, window.innerWidth - r.width - 8);
-                    }
-                    if (this.y + r.height > window.innerHeight - 8) {
-                        this.y = Math.max(8, window.innerHeight - r.height - 8);
-                    }
-                });
-            },
-            openFromButton(event, item) {
-                const btn = event.currentTarget.getBoundingClientRect();
-                this.openAt(btn.right - 176, btn.bottom + 4, item);
-            },
-            openFromEvent(event, item) {
-                this.openAt(event.clientX, event.clientY, item);
-            },
-            close() {
-                this.open = false;
-                this.item = null;
-            }
+<div x-data="{
+    contextMenu: {
+        open: false,
+        x: 0,
+        y: 0,
+        item: null,
+        openAt(x, y, item) {
+            this.item = item;
+            this.x = x;
+            this.y = y;
+            this.open = true;
+            this.$nextTick(() => {
+                const el = this.$refs.floatingMenu;
+                if (!el) return;
+                const r = el.getBoundingClientRect();
+                if (this.x + r.width > window.innerWidth - 8) {
+                    this.x = Math.max(8, window.innerWidth - r.width - 8);
+                }
+                if (this.y + r.height > window.innerHeight - 8) {
+                    this.y = Math.max(8, window.innerHeight - r.height - 8);
+                }
+            });
+        },
+        openFromButton(event, item) {
+            const btn = event.currentTarget.getBoundingClientRect();
+            this.openAt(btn.right - 176, btn.bottom + 4, item);
+        },
+        openFromEvent(event, item) {
+            this.openAt(event.clientX, event.clientY, item);
+        },
+        close() {
+            this.open = false;
+            this.item = null;
         }
-    }"
-    @click.window="contextMenu.close()"
-    @keydown.escape.window="contextMenu.close()"
-    @scroll.window="contextMenu.close()"
-    @resize.window="contextMenu.close()"
-    class="space-y-4 w-full min-w-0"
->
+    }
+}" @click.window="contextMenu.close()" @keydown.escape.window="contextMenu.close()"
+    @scroll.window="contextMenu.close()" @resize.window="contextMenu.close()" class="space-y-4 w-full min-w-0">
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-300">
         <div>
@@ -586,7 +578,9 @@ new #[Layout('layouts.app')] class extends Component {
         <div class="flex items-center gap-2">
             <button wire:click="openCreateModal" type="button"
                 class="inline-flex items-center gap-1.5 rounded bg-[#00a3cc] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[#008fb3] transition">
-                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
                 <span>Create Quotation</span>
             </button>
         </div>
@@ -596,19 +590,25 @@ new #[Layout('layouts.app')] class extends Component {
     <div class="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <div class="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
             <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Total Quotes</span>
-            <p class="text-2xl font-light tabular-nums text-slate-900 mt-1">{{ number_format($stats['total']) }}</p>
+            <p class="text-2xl font-light tabular-nums text-slate-900 mt-1 text-right">
+                {{ number_format($stats['total']) }}</p>
         </div>
         <div class="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
             <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Draft / In Progress</span>
-            <p class="text-2xl font-light tabular-nums text-slate-700 mt-1">{{ number_format($stats['draft']) }}</p>
+            <p class="text-2xl font-light tabular-nums text-slate-700 mt-1 text-right">
+                {{ number_format($stats['draft']) }}</p>
         </div>
         <div class="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
             <span class="text-[11px] font-semibold uppercase tracking-wider text-sky-700">Sent to Customer</span>
-            <p class="text-2xl font-light tabular-nums text-sky-800 mt-1">{{ number_format($stats['sent']) }}</p>
+            <p class="text-2xl font-light tabular-nums text-sky-800 mt-1 text-right">{{ number_format($stats['sent']) }}
+            </p>
         </div>
         <div class="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
-            <span class="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Accepted / Converted</span>
-            <p class="text-2xl font-light tabular-nums text-emerald-700 mt-1">{{ number_format($stats['accepted']) }}</p>
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Accepted /
+                Converted</span>
+            <p class="text-2xl font-light tabular-nums text-emerald-700 mt-1 text-right">
+                {{ number_format($stats['accepted']) }}
+            </p>
         </div>
     </div>
 
@@ -624,7 +624,8 @@ new #[Layout('layouts.app')] class extends Component {
 
             <!-- Status Filter -->
             <div class="w-40">
-                <select wire:model.live="status" class="w-full h-9 rounded border border-slate-300 bg-white pl-2.5 pr-8 text-xs text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
+                <select wire:model.live="status"
+                    class="w-full h-9 rounded border border-slate-300 bg-white pl-2.5 pr-8 text-xs text-slate-900 focus:border-slate-500 focus:ring-1 focus:ring-slate-500">
                     <option value="">All Statuses</option>
                     <option value="draft">Draft</option>
                     <option value="sent">Sent</option>
@@ -685,236 +686,283 @@ new #[Layout('layouts.app')] class extends Component {
         <div class="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
             <div class="overflow-x-auto w-full">
                 <table class="w-full border-collapse border border-slate-300 text-xs">
-                <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
-                    <tr>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Quote #</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Date Created</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left">Customer</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Items</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Total Due</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Valid Until</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Status</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap w-16">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200">
-                    @forelse ($quotations as $quote)
-                        <tr 
-                            class="hover:bg-slate-50 transition-colors cursor-default" 
-                            wire:key="quote-row-{{ $quote->id }}"
-                            @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $quote->id }}, number: '{{ $quote->quote_number }}', status: '{{ $quote->status }}', canConvert: {{ !$quote->isConverted() && $quote->status !== 'cancelled' ? 'true' : 'false' }}, canEdit: {{ !$quote->isConverted() ? 'true' : 'false' }} })"
-                        >
-                            <td class="border border-slate-200 px-2.5 py-1.5 font-mono font-medium text-slate-900 whitespace-nowrap">
-                                <button wire:click="viewDetails({{ $quote->id }})" type="button" class="text-[#008fb3] hover:underline font-bold text-left">
-                                    {{ $quote->quote_number }}
-                                </button>
-                            </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 tabular-nums whitespace-nowrap">
-                                {{ $quote->created_at->format('M d, Y') }}
-                            </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-800">
-                                <div class="font-medium text-slate-900">{{ $quote->customer_name ?: 'Walk-in / Unspecified' }}</div>
-                                @if ($quote->customer_contact)
-                                    <div class="text-[10px] text-slate-500">{{ $quote->customer_contact }}</div>
-                                @endif
-                            </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-center tabular-nums text-slate-700 whitespace-nowrap">
-                                {{ $quote->items->count() }}
-                            </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-right font-bold text-slate-900 tabular-nums whitespace-nowrap">
-                                {{ $currency::format($quote->total) }}
-                            </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-slate-600 tabular-nums whitespace-nowrap">
-                                @if ($quote->valid_until)
-                                    <span class="{{ $quote->isExpired() ? 'text-amber-600 font-semibold' : '' }}">
-                                        {{ $quote->valid_until->format('M d, Y') }}
-                                    </span>
-                                @else
-                                    <span class="text-slate-400">—</span>
-                                @endif
-                            </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
-                                @php
-                                    $statusClasses = match ($quote->status) {
-                                        'draft' => 'text-slate-600',
-                                        'sent' => 'text-sky-700 font-bold',
-                                        'accepted' => 'text-emerald-700 font-bold',
-                                        'expired' => 'text-amber-700 font-bold',
-                                        'cancelled' => 'text-rose-700 font-bold',
-                                        default => 'text-slate-600',
-                                    };
-                                @endphp
-                                <span class="text-[10px] font-bold uppercase tracking-wider {{ $statusClasses }}">
-                                    {{ $quote->status }}
-                                </span>
-                            </td>
-                            <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
-                                <button 
-                                    @click.stop="contextMenu.openFromButton($event, { id: {{ $quote->id }}, number: '{{ $quote->quote_number }}', status: '{{ $quote->status }}', canConvert: {{ !$quote->isConverted() && $quote->status !== 'cancelled' ? 'true' : 'false' }}, canEdit: {{ !$quote->isConverted() ? 'true' : 'false' }} })" 
-                                    type="button" 
-                                    class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
-                                    title="Actions"
-                                >
-                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none" />
-                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-                                        <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none" />
-                                    </svg>
-                                </button>
-                            </td>
-                        </tr>
-                    @empty
+                    <thead
+                        class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                         <tr>
-                            <td colspan="8" class="border border-slate-200 px-4 py-8 text-center text-slate-500">
-                                No quotations found matching current filters.
-                            </td>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-32 whitespace-nowrap">Quote #
+                            </th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">Date</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24 whitespace-nowrap">Time</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[120px] whitespace-nowrap">
+                                Customer</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Items
+                            </th>
+                            <th
+                                class="border border-slate-300 px-2.5 py-1.5 text-right w-28 whitespace-nowrap font-bold text-slate-900">
+                                Total Due</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">Valid
+                                Until</th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-28 whitespace-nowrap">Status
+                            </th>
+                            <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Actions
+                            </th>
                         </tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        @forelse ($quotations as $quote)
+                            <tr class="hover:bg-slate-50 transition-colors cursor-default"
+                                wire:key="quote-row-{{ $quote->id }}"
+                                @contextmenu.prevent="contextMenu.openFromEvent($event, { id: {{ $quote->id }}, number: '{{ $quote->quote_number }}', status: '{{ $quote->status }}', canConvert: {{ !$quote->isConverted() && $quote->status !== 'cancelled' ? 'true' : 'false' }}, canEdit: {{ !$quote->isConverted() ? 'true' : 'false' }} })">
+                                <!-- Quote # -->
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 font-mono font-medium text-slate-900 tabular-nums whitespace-nowrap">
+                                    <button wire:click="viewDetails({{ $quote->id }})" type="button"
+                                        class="text-[#008fb3] hover:underline font-bold text-left">
+                                        {{ $quote->quote_number }}
+                                    </button>
+                                </td>
 
-        @if ($quotations->hasPages())
-            <div class="px-3 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
-                <div>
-                    <span class="text-slate-500">
-                        Page <span class="font-medium text-slate-800">{{ $quotations->currentPage() }}</span> of
-                        <span class="font-medium text-slate-800">{{ $quotations->lastPage() }}</span>
-                    </span>
-                </div>
-                <div class="inline-flex items-center gap-1">
-                    @if ($quotations->onFirstPage())
-                        <span class="px-2 py-1 text-slate-300 cursor-not-allowed">Previous</span>
-                    @else
-                        <button wire:click="previousPage" type="button" class="px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded">Previous</button>
-                    @endif
+                                <!-- Date Column -->
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-700 whitespace-nowrap">
+                                    {{ $quote->created_at->format('Y-m-d') }}
+                                </td>
 
-                    @php
-                        $cur = $quotations->currentPage();
-                        $last = $quotations->lastPage();
-                        $start = max(1, $cur - 2);
-                        $end = min($last, $cur + 2);
-                    @endphp
+                                <!-- Time Column -->
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-500 whitespace-nowrap">
+                                    {{ $quote->created_at->format('h:i A') }}
+                                </td>
 
-                    @if ($start > 1)
-                        <button wire:click="gotoPage(1)" type="button" class="px-2 py-1 rounded text-slate-600 hover:bg-slate-100">1</button>
-                        @if ($start > 2)
-                            <span class="px-1 text-slate-400">...</span>
-                        @endif
-                    @endif
+                                <!-- Customer -->
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-slate-800 whitespace-nowrap">
+                                    {{ $quote->customer_name ?: 'Walk-in' }}
+                                </td>
 
-                    @for ($p = $start; $p <= $end; $p++)
-                        @if ($p == $cur)
-                            <span class="px-2 py-1 rounded bg-slate-900 text-white font-medium">{{ $p }}</span>
-                        @else
-                            <button wire:click="gotoPage({{ $p }})" type="button" class="px-2 py-1 rounded text-slate-600 hover:bg-slate-100">{{ $p }}</button>
-                        @endif
-                    @endfor
+                                <!-- Items count -->
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 text-center tabular-nums text-slate-700 whitespace-nowrap">
+                                    {{ $quote->items->count() }}
+                                </td>
 
-                    @if ($end < $last)
-                        @if ($end < $last - 1)
-                            <span class="px-1 text-slate-400">...</span>
-                        @endif
-                        <button wire:click="gotoPage({{ $last }})" type="button" class="px-2 py-1 rounded text-slate-600 hover:bg-slate-100">{{ $last }}</button>
-                    @endif
+                                <!-- Total Due -->
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 text-right font-bold text-slate-900 tabular-nums whitespace-nowrap">
+                                    {{ $currency::format($quote->total) }}
+                                </td>
 
-                    @if ($quotations->hasMorePages())
-                        <button wire:click="nextPage" type="button" class="px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded">Next</button>
-                    @else
-                        <span class="px-2 py-1 text-slate-300 cursor-not-allowed">Next</span>
-                    @endif
-                </div>
+                                <!-- Valid Until -->
+                                <td
+                                    class="border border-slate-200 px-2.5 py-1.5 tabular-nums text-slate-700 whitespace-nowrap">
+                                    @if ($quote->valid_until)
+                                        <span class="{{ $quote->isExpired() ? 'text-amber-600 font-semibold' : '' }}">
+                                            {{ $quote->valid_until->format('Y-m-d') }}
+                                        </span>
+                                    @else
+                                        <span class="text-slate-400">—</span>
+                                    @endif
+                                </td>
+
+                                <!-- Status -->
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                                    @php
+                                        $statusClasses = match ($quote->status) {
+                                            'draft' => 'text-slate-600',
+                                            'sent' => 'text-sky-700 font-bold',
+                                            'accepted' => 'text-emerald-700 font-bold',
+                                            'expired' => 'text-amber-700 font-bold',
+                                            'cancelled' => 'text-rose-700 font-bold',
+                                            default => 'text-slate-600',
+                                        };
+                                    @endphp
+                                    <span class="text-[10px] font-bold uppercase tracking-wider {{ $statusClasses }}">
+                                        {{ $quote->status }}
+                                    </span>
+                                </td>
+
+                                <!-- Actions -->
+                                <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                                    <button
+                                        @click.stop="contextMenu.openFromButton($event, { id: {{ $quote->id }}, number: '{{ $quote->quote_number }}', status: '{{ $quote->status }}', canConvert: {{ !$quote->isConverted() && $quote->status !== 'cancelled' ? 'true' : 'false' }}, canEdit: {{ !$quote->isConverted() ? 'true' : 'false' }} })"
+                                        type="button"
+                                        class="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
+                                        title="Actions">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <circle cx="12" cy="5" r="1.5" fill="currentColor"
+                                                stroke="none" />
+                                            <circle cx="12" cy="12" r="1.5" fill="currentColor"
+                                                stroke="none" />
+                                            <circle cx="12" cy="19" r="1.5" fill="currentColor"
+                                                stroke="none" />
+                                        </svg>
+                                    </button>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="9"
+                                    class="border border-slate-200 px-4 py-8 text-center text-slate-500">
+                                    No quotations found matching current filters.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
             </div>
-        @endif
+
+            @if ($quotations->hasPages())
+                <div
+                    class="px-3 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                    <div>
+                        <span class="text-slate-500">
+                            Page <span class="font-medium text-slate-800">{{ $quotations->currentPage() }}</span> of
+                            <span class="font-medium text-slate-800">{{ $quotations->lastPage() }}</span>
+                        </span>
+                    </div>
+                    <div class="inline-flex items-center gap-1">
+                        @if ($quotations->onFirstPage())
+                            <span class="px-2 py-1 text-slate-300 cursor-not-allowed">Previous</span>
+                        @else
+                            <button wire:click="previousPage" type="button"
+                                class="px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded">Previous</button>
+                        @endif
+
+                        @php
+                            $cur = $quotations->currentPage();
+                            $last = $quotations->lastPage();
+                            $start = max(1, $cur - 2);
+                            $end = min($last, $cur + 2);
+                        @endphp
+
+                        @if ($start > 1)
+                            <button wire:click="gotoPage(1)" type="button"
+                                class="px-2 py-1 rounded text-slate-600 hover:bg-slate-100">1</button>
+                            @if ($start > 2)
+                                <span class="px-1 text-slate-400">...</span>
+                            @endif
+                        @endif
+
+                        @for ($p = $start; $p <= $end; $p++)
+                            @if ($p == $cur)
+                                <span
+                                    class="px-2 py-1 rounded bg-slate-900 text-white font-medium">{{ $p }}</span>
+                            @else
+                                <button wire:click="gotoPage({{ $p }})" type="button"
+                                    class="px-2 py-1 rounded text-slate-600 hover:bg-slate-100">{{ $p }}</button>
+                            @endif
+                        @endfor
+
+                        @if ($end < $last)
+                            @if ($end < $last - 1)
+                                <span class="px-1 text-slate-400">...</span>
+                            @endif
+                            <button wire:click="gotoPage({{ $last }})" type="button"
+                                class="px-2 py-1 rounded text-slate-600 hover:bg-slate-100">{{ $last }}</button>
+                        @endif
+
+                        @if ($quotations->hasMorePages())
+                            <button wire:click="nextPage" type="button"
+                                class="px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded">Next</button>
+                        @else
+                            <span class="px-2 py-1 text-slate-300 cursor-not-allowed">Next</span>
+                        @endif
+                    </div>
+                </div>
+            @endif
         </div>
     </div>
 
     <!-- Floating Context Menu -->
-    <div 
-        x-ref="floatingMenu"
-        x-show="contextMenu.open" 
-        x-cloak
-        x-transition:enter="transition ease-out duration-100"
-        x-transition:enter-start="opacity-0 scale-95"
-        x-transition:enter-end="opacity-100 scale-100"
-        x-transition:leave="transition ease-in duration-75"
-        x-transition:leave-start="opacity-100 scale-100"
+    <div x-ref="floatingMenu" x-show="contextMenu.open" x-cloak x-transition:enter="transition ease-out duration-100"
+        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+        x-transition:leave="transition ease-in duration-75" x-transition:leave-start="opacity-100 scale-100"
         x-transition:leave-end="opacity-0 scale-95"
         :style="`position: fixed; left: ${contextMenu.x}px; top: ${contextMenu.y}px; z-index: 9999;`"
         class="w-52 rounded-lg border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"
-        style="display: none;"
-    >
-        <button 
-            @click="if (contextMenu.item) { $wire.viewDetails(contextMenu.item.id); contextMenu.close(); }"
-            type="button" 
-            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-        >
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        style="display: none;">
+        <button @click="if (contextMenu.item) { $wire.viewDetails(contextMenu.item.id); contextMenu.close(); }"
+            type="button"
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
             <span>View Details</span>
         </button>
 
         <template x-if="contextMenu.item?.canEdit">
-            <button 
-                @click="if (contextMenu.item) { $wire.openEditModal(contextMenu.item.id); contextMenu.close(); }"
-                type="button" 
-                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-            >
-                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            <button @click="if (contextMenu.item) { $wire.openEditModal(contextMenu.item.id); contextMenu.close(); }"
+                type="button"
+                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
                 <span>Edit Quotation</span>
             </button>
         </template>
 
-        <a 
-            :href="contextMenu.item ? '/quotations/' + contextMenu.item.id + '/print' : '#'"
-            target="_blank"
-            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-        >
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+        <a :href="contextMenu.item ? '/quotations/' + contextMenu.item.id + '/print' : '#'" target="_blank"
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
             <span>Print Formal Quote</span>
         </a>
 
         @if (auth()->user()?->canAccessPos())
             <template x-if="contextMenu.item?.canConvert">
-                <button 
+                <button
                     @click="if (contextMenu.item) { $wire.convertToSale(contextMenu.item.id); contextMenu.close(); }"
-                    type="button" 
-                    class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
-                >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    type="button"
+                    class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
                     <span>Load to POS Cart</span>
                 </button>
             </template>
         @endif
 
         <template x-if="contextMenu.item?.status === 'draft'">
-            <button 
+            <button
                 @click="if (contextMenu.item) { $wire.updateStatus(contextMenu.item.id, 'sent'); contextMenu.close(); }"
-                type="button" 
-                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-sky-700 hover:bg-sky-50 transition-colors"
-            >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                type="button"
+                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-sky-700 hover:bg-sky-50 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
                 <span>Mark as Sent</span>
             </button>
         </template>
 
         <div class="my-1 border-t border-slate-100"></div>
 
-        <button 
+        <button
             @click="if (contextMenu.item) { navigator.clipboard.writeText(contextMenu.item.number); $dispatch('toast', { type: 'success', message: 'Quote #' + contextMenu.item.number + ' copied.' }); contextMenu.close(); }"
-            type="button" 
-            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-        >
-            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+            type="button"
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+            </svg>
             <span>Copy Quote #</span>
         </button>
 
         <template x-if="contextMenu.item?.status !== 'cancelled' && contextMenu.item?.canConvert">
-            <button 
+            <button
                 @click="if (contextMenu.item && confirm('Cancel this quotation?')) { $wire.updateStatus(contextMenu.item.id, 'cancelled'); contextMenu.close(); }"
-                type="button" 
-                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-rose-700 hover:bg-rose-50 transition-colors"
-            >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                type="button"
+                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs font-medium text-rose-700 hover:bg-rose-50 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
                 <span>Cancel Quote</span>
             </button>
         </template>
@@ -927,10 +975,12 @@ new #[Layout('layouts.app')] class extends Component {
                 <!-- Modal Topbar -->
                 <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 bg-slate-50">
                     <div class="flex items-center gap-3">
-                        <span class="font-mono text-sm font-bold text-[#008fb3]">{{ $selectedQuotation->quote_number }}</span>
-                      
+                        <span
+                            class="font-mono text-sm font-bold text-[#008fb3]">{{ $selectedQuotation->quote_number }}</span>
+
                     </div>
-                    <button wire:click="closeDetailModal" type="button" class="text-slate-400 hover:text-slate-700 text-xl font-bold p-1">
+                    <button wire:click="closeDetailModal" type="button"
+                        class="text-slate-400 hover:text-slate-700 text-xl font-bold p-1">
                         &times;
                     </button>
                 </div>
@@ -938,28 +988,37 @@ new #[Layout('layouts.app')] class extends Component {
                 <!-- Clean, Formal Document Card Body -->
                 <div class="overflow-y-auto p-6 space-y-5 text-xs">
                     <!-- Formal Header Section -->
-                    <div class="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                    <div
+                        class="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                         <div>
-                            <h2 class="text-lg font-black uppercase tracking-tight text-slate-900 font-heading">Grade A Paint Center</h2>
+                            <h2 class="text-lg font-black uppercase tracking-tight text-slate-900 font-heading">Grade A
+                                Paint Center</h2>
                             <p class="text-[11px] text-slate-600">Retail Paint, Tinting &amp; Painting Supplies</p>
                             <p class="text-[10px] text-slate-600">Lapu-Lapu St., Agdao, Davao City</p>
                         </div>
                         <div class="sm:text-right text-[11px] space-y-0.5">
-                            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Price Quotation</span>
-                            <p class="text-slate-600">Issued: {{ $selectedQuotation->created_at->format('M d, Y') }}</p>
-                            <p class="text-slate-600">Valid Until: {{ $selectedQuotation->valid_until ? $selectedQuotation->valid_until->format('M d, Y') : '—' }}</p>
+                            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Price
+                                Quotation</span>
+                            <p class="text-slate-600">Issued: {{ $selectedQuotation->created_at->format('M d, Y') }}
+                            </p>
+                            <p class="text-slate-600">Valid Until:
+                                {{ $selectedQuotation->valid_until ? $selectedQuotation->valid_until->format('M d, Y') : '—' }}
+                            </p>
                         </div>
                     </div>
 
                     <!-- Line Items Table -->
                     <div>
                         <div class="flex items-center justify-between mb-2">
-                            <h3 class="font-bold text-xs uppercase tracking-wider text-slate-700">Quotation Line Items</h3>
-                            <span class="text-[11px] text-slate-500">{{ $selectedQuotation->items->count() }} item(s)</span>
+                            <h3 class="font-bold text-xs uppercase tracking-wider text-slate-700">Quotation Line Items
+                            </h3>
+                            <span class="text-[11px] text-slate-500">{{ $selectedQuotation->items->count() }}
+                                item(s)</span>
                         </div>
                         <div class="overflow-hidden rounded border border-slate-200">
                             <table class="w-full border-collapse text-xs">
-                                <thead class="bg-slate-100 uppercase text-[10px] font-semibold text-slate-700 border-b border-slate-200">
+                                <thead
+                                    class="bg-slate-100 uppercase text-[10px] font-semibold text-slate-700 border-b border-slate-200">
                                     <tr>
                                         <th class="px-3 py-2 text-left">SKU</th>
                                         <th class="px-3 py-2 text-left">Description</th>
@@ -978,7 +1037,9 @@ new #[Layout('layouts.app')] class extends Component {
                                             <td class="px-3 py-2 font-medium text-slate-900">
                                                 {{ $item->description }}
                                                 @if ($item->mix_data)
-                                                    <span class="block text-[10px] text-purple-700 font-semibold">Custom Paint Formulation</span>
+                                                    <span
+                                                        class="block text-[10px] text-purple-700 font-semibold">Custom
+                                                        Paint Formulation</span>
                                                 @endif
                                             </td>
                                             <td class="px-3 py-2 text-slate-600">
@@ -1005,7 +1066,9 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class="flex-1 w-full sm:max-w-md">
                             @if ($selectedQuotation->notes)
                                 <div class="rounded border border-slate-200 bg-slate-50 p-3 text-xs">
-                                    <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Notes &amp; Terms:</span>
+                                    <span
+                                        class="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Notes
+                                        &amp; Terms:</span>
                                     <p class="text-slate-700 whitespace-pre-line">{{ $selectedQuotation->notes }}</p>
                                 </div>
                             @endif
@@ -1014,27 +1077,32 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class="w-full sm:w-72 rounded-lg  p-3.5 space-y-2 tabular-nums text-xs">
                             <div class="flex justify-between text-slate-600">
                                 <span>Subtotal:</span>
-                                <span class="font-medium text-slate-900">{{ $currency::format($selectedQuotation->subtotal) }}</span>
+                                <span
+                                    class="font-medium text-slate-900">{{ $currency::format($selectedQuotation->subtotal) }}</span>
                             </div>
 
                             @if ((float) $selectedQuotation->discount_percentage > 0)
                                 <div class="flex justify-between text-emerald-700 font-semibold">
-                                    <span>Discount ({{ number_format((float) $selectedQuotation->discount_percentage, 2) }}%{{ $selectedQuotation->discount_type && $selectedQuotation->discount_type !== 'none' ? ' - ' . ucfirst(str_replace('_', ' ', $selectedQuotation->discount_type)) : '' }}):</span>
+                                    <span>Discount
+                                        ({{ number_format((float) $selectedQuotation->discount_percentage, 2) }}%{{ $selectedQuotation->discount_type && $selectedQuotation->discount_type !== 'none' ? ' - ' . ucfirst(str_replace('_', ' ', $selectedQuotation->discount_type)) : '' }}):</span>
                                     <span>-{{ $currency::format($selectedQuotation->discount_amount) }}</span>
                                 </div>
                                 @if ($selectedQuotation->discount_reason)
                                     <div class="text-[10px] text-slate-500 italic pl-1 -mt-1">
                                         Reason: {{ $selectedQuotation->discount_reason }}
                                         @if ($selectedQuotation->discountAuthorizer)
-                                            <span class="font-medium text-slate-700"> (Auth: {{ $selectedQuotation->discountAuthorizer->name }})</span>
+                                            <span class="font-medium text-slate-700"> (Auth:
+                                                {{ $selectedQuotation->discountAuthorizer->name }})</span>
                                         @endif
                                     </div>
                                 @endif
                             @endif
 
-                            <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-2">
+                            <div
+                                class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-2">
                                 <span>Total Estimated:</span>
-                                <span class="text-base font-black text-slate-900">{{ $currency::format($selectedQuotation->total) }}</span>
+                                <span
+                                    class="text-base font-black text-slate-900">{{ $currency::format($selectedQuotation->total) }}</span>
                             </div>
                         </div>
                     </div>
@@ -1050,14 +1118,22 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="flex items-center gap-2">
                         <a href="{{ route('quotations.print', $selectedQuotation->id) }}" target="_blank"
                             class="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition">
-                            <svg class="h-3.5 w-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                            <svg class="h-3.5 w-3.5 text-slate-500" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                            </svg>
                             <span>Print Formal Quote</span>
                         </a>
 
-                        @if (! $selectedQuotation->isConverted())
+                        @if (!$selectedQuotation->isConverted())
                             <button wire:click="openEditModal({{ $selectedQuotation->id }})" type="button"
                                 class="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition">
-                                <svg class="h-3.5 w-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                <svg class="h-3.5 w-3.5 text-slate-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
                                 <span>Edit Quotation</span>
                             </button>
 
@@ -1081,9 +1157,11 @@ new #[Layout('layouts.app')] class extends Component {
                 <!-- Modal Header -->
                 <div class="flex items-center justify-between border-b border-slate-200 px-5 bg-slate-50">
                     <div>
-                        <h2 class="text-sm font-bold text-slate-900">{{ $editingQuotationId ? 'Edit Price Quotation' : 'Create New Quotation' }}</h2>
+                        <h2 class="text-sm font-bold text-slate-900">
+                            {{ $editingQuotationId ? 'Edit Price Quotation' : 'Create New Quotation' }}</h2>
                     </div>
-                    <button wire:click="closeEditModal" type="button" class="text-slate-400 hover:text-slate-700 text-xl font-bold p-1">
+                    <button wire:click="closeEditModal" type="button"
+                        class="text-slate-400 hover:text-slate-700 text-xl font-bold p-1">
                         &times;
                     </button>
                 </div>
@@ -1091,20 +1169,28 @@ new #[Layout('layouts.app')] class extends Component {
                 <!-- Modal Body -->
                 <div class="overflow-y-auto p-5 space-y-4 text-xs">
                     <!-- Basic Meta Inputs -->
-                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
+                    <div
+                        class="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
                         <div>
-                            <label class="block text-[11px] font-semibold text-slate-700 mb-1">Customer / Client Name</label>
-                            <input wire:model="editCustomerName" type="text" placeholder="e.g. John Doe / Davao Builders"
+                            <label class="block text-[11px] font-semibold text-slate-700 mb-1">Customer / Client
+                                Name</label>
+                            <input wire:model="editCustomerName" type="text"
+                                placeholder="e.g. John Doe / Davao Builders"
                                 class="w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
-                            @error('editCustomerName') <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p> @enderror
+                            @error('editCustomerName')
+                                <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p>
+                            @enderror
                         </div>
                         <div>
-                            <label class="block text-[11px] font-semibold text-slate-700 mb-1">Contact (Phone / Email)</label>
+                            <label class="block text-[11px] font-semibold text-slate-700 mb-1">Contact (Phone /
+                                Email)</label>
                             <input wire:model="editCustomerContact" type="text" placeholder="e.g. 0917-123-4567"
                                 inputmode="tel"
                                 x-on:keydown="if(!/[0-9+\-\s()]/.test($event.key) && !['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Enter'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                 class="w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
-                            @error('editCustomerContact') <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p> @enderror
+                            @error('editCustomerContact')
+                                <p class="text-rose-600 text-[10px] mt-0.5">{{ $message }}</p>
+                            @enderror
                         </div>
                         <div>
                             <label class="block text-[11px] font-semibold text-slate-700 mb-1">Valid Until Date</label>
@@ -1125,19 +1211,23 @@ new #[Layout('layouts.app')] class extends Component {
 
                     <!-- Product Catalog Selector Section -->
                     <div class="">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                        <div
+                            class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
                             <div>
-                                <h3 class="font-heading font-bold text-xs uppercase tracking-wider text-slate-900">Select Products from Catalog</h3>
+                                <h3 class="font-heading font-bold text-xs uppercase tracking-wider text-slate-900">
+                                    Select Products from Catalog</h3>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <!-- Search -->
                                 <div class="w-44 sm:w-52">
-                                    <input wire:model.live.debounce.250ms="productSearch" type="search" placeholder="Search name or SKU..."
+                                    <input wire:model.live.debounce.250ms="productSearch" type="search"
+                                        placeholder="Search name or SKU..."
                                         class="w-full h-8 rounded border border-slate-300 px-2.5 text-xs bg-white text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
                                 </div>
                                 <!-- Brand -->
                                 <div class="w-32">
-                                    <select wire:model.live="catalogBrandId" class="w-full h-8 rounded border border-slate-300 bg-white pl-2 pr-6 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]">
+                                    <select wire:model.live="catalogBrandId"
+                                        class="w-full h-8 rounded border border-slate-300 bg-white pl-2 pr-6 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]">
                                         <option value="">All Brands</option>
                                         @foreach ($brands as $b)
                                             <option value="{{ $b->id }}">{{ $b->name }}</option>
@@ -1146,7 +1236,8 @@ new #[Layout('layouts.app')] class extends Component {
                                 </div>
                                 <!-- Category -->
                                 <div class="w-32">
-                                    <select wire:model.live="catalogCategoryId" class="w-full h-8 rounded border border-slate-300 bg-white pl-2 pr-6 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]">
+                                    <select wire:model.live="catalogCategoryId"
+                                        class="w-full h-8 rounded border border-slate-300 bg-white pl-2 pr-6 py-1 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]">
                                         <option value="">All Categories</option>
                                         @foreach ($categories as $c)
                                             <option value="{{ $c->id }}">{{ $c->name }}</option>
@@ -1159,7 +1250,8 @@ new #[Layout('layouts.app')] class extends Component {
                         <!-- Catalog Items Table -->
                         <div class="overflow-x-auto max-h-52 overflow-y-auto border border-slate-200 rounded">
                             <table class="w-full border-collapse text-xs">
-                                <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-200 sticky top-0 z-10">
+                                <thead
+                                    class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-200 sticky top-0 z-10">
                                     <tr>
                                         <th class="px-2.5 py-1.5 text-left w-24">SKU</th>
                                         <th class="px-2.5 py-1.5 text-left">Product Name</th>
@@ -1173,14 +1265,22 @@ new #[Layout('layouts.app')] class extends Component {
                                 <tbody class="divide-y divide-slate-100">
                                     @forelse ($catalogProducts as $cp)
                                         <tr class="hover:bg-cyan-50/40 transition-colors">
-                                            <td class="px-2.5 py-1.5 font-mono text-[11px] text-slate-600">{{ $cp->sku }}</td>
-                                            <td class="px-2.5 py-1.5 font-semibold text-slate-900">{{ $cp->name }}</td>
-                                            <td class="px-2.5 py-1.5 text-slate-600">{{ $cp->brand?->name ?? '—' }}</td>
-                                            <td class="px-2.5 py-1.5 text-slate-600">{{ $cp->formattedPackage() }}</td>
-                                            <td class="px-2.5 py-1.5 text-right font-medium text-slate-900 tabular-nums">{{ $currency::format($cp->selling_price) }}</td>
-                                            <td class="px-2.5 py-1.5 text-center tabular-nums text-slate-600">{{ number_format($cp->getTotalAvailableStock(), 1) }}</td>
+                                            <td class="px-2.5 py-1.5 font-mono text-[11px] text-slate-600">
+                                                {{ $cp->sku }}</td>
+                                            <td class="px-2.5 py-1.5 font-semibold text-slate-900">{{ $cp->name }}
+                                            </td>
+                                            <td class="px-2.5 py-1.5 text-slate-600">{{ $cp->brand?->name ?? '—' }}
+                                            </td>
+                                            <td class="px-2.5 py-1.5 text-slate-600">{{ $cp->formattedPackage() }}
+                                            </td>
+                                            <td
+                                                class="px-2.5 py-1.5 text-right font-medium text-slate-900 tabular-nums">
+                                                {{ $currency::format($cp->selling_price) }}</td>
+                                            <td class="px-2.5 py-1.5 text-center tabular-nums text-slate-600">
+                                                {{ number_format($cp->getTotalAvailableStock(), 1) }}</td>
                                             <td class="px-2.5 py-1.5 text-center">
-                                                <button wire:click="addProductToEdit({{ $cp->id }})" type="button"
+                                                <button wire:click="addProductToEdit({{ $cp->id }})"
+                                                    type="button"
                                                     class="inline-flex items-center gap-1 rounded bg-[#00a3cc] px-2 py-0.5 text-[11px] font-bold text-white hover:bg-[#008fb3] transition shadow-xs">
                                                     + Add
                                                 </button>
@@ -1209,7 +1309,8 @@ new #[Layout('layouts.app')] class extends Component {
                         <!-- Non-Arbitrary Items Table (Read-only details, editable quantity) -->
                         <div class="overflow-x-auto rounded border border-slate-200">
                             <table class="w-full border-collapse text-xs">
-                                <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-200">
+                                <thead
+                                    class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-200">
                                     <tr>
                                         <th class="px-2.5 py-2 text-left w-24">SKU</th>
                                         <th class="px-2.5 py-2 text-left">Description</th>
@@ -1233,7 +1334,9 @@ new #[Layout('layouts.app')] class extends Component {
                                                 {{ $item['package'] }}
                                             </td>
                                             <td class="px-2.5 py-2 text-center">
-                                                <input wire:model.live.debounce.250ms="editItems.{{ $index }}.quantity" type="number" step="1" min="1" max="99999.99"
+                                                <input
+                                                    wire:model.live.debounce.250ms="editItems.{{ $index }}.quantity"
+                                                    type="number" step="1" min="1" max="99999.99"
                                                     inputmode="decimal"
                                                     x-on:keydown="if(['e','E','+','-'].includes($event.key)) $event.preventDefault()"
                                                     class="w-20 text-center rounded border border-slate-300 px-1.5 py-1 text-xs tabular-nums text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]" />
@@ -1248,9 +1351,16 @@ new #[Layout('layouts.app')] class extends Component {
                                                 {{ $currency::format($item['subtotal']) }}
                                             </td>
                                             <td class="px-2.5 py-2 text-center">
-                                                <button wire:click="removeEditItem({{ $index }})" type="button"
-                                                    class="inline-flex items-center justify-center h-6 w-6 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition" title="Remove Item">
-                                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                <button wire:click="removeEditItem({{ $index }})"
+                                                    type="button"
+                                                    class="inline-flex items-center justify-center h-6 w-6 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition"
+                                                    title="Remove Item">
+                                                    <svg class="h-4 w-4" fill="none" stroke="currentColor"
+                                                        viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                                            stroke-width="2"
+                                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
                                                 </button>
                                             </td>
                                         </tr>
@@ -1273,8 +1383,10 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                         <!-- Notes & Terms -->
                         <div class="space-y-1">
-                            <label class="block text-[11px] font-semibold text-slate-700">Quotation Notes &amp; Terms</label>
-                            <textarea wire:model="editNotes" rows="3" placeholder="Enter special terms, delivery notes, or payment conditions..."
+                            <label class="block text-[11px] font-semibold text-slate-700">Quotation Notes &amp;
+                                Terms</label>
+                            <textarea wire:model="editNotes" rows="3"
+                                placeholder="Enter special terms, delivery notes, or payment conditions..."
                                 class="w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#00a3cc] focus:ring-1 focus:ring-[#00a3cc]"></textarea>
                         </div>
 
@@ -1282,11 +1394,14 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class=" p-3.5 space-y-2 tabular-nums text-xs flex flex-col justify-between">
                             <div class="flex justify-between text-slate-600">
                                 <span class="font-sans font-normal">Quotation Items Subtotal:</span>
-                                <span class="font-medium text-slate-900">{{ $currency::format($this->editSubtotal) }}</span>
+                                <span
+                                    class="font-medium text-slate-900">{{ $currency::format($this->editSubtotal) }}</span>
                             </div>
-                            <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-2">
+                            <div
+                                class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-2">
                                 <span class="font-sans font-bold">Total Quoted Amount:</span>
-                                <span class="text-base font-black text-slate-900">{{ $currency::format($this->editSubtotal) }}</span>
+                                <span
+                                    class="text-base font-black text-slate-900">{{ $currency::format($this->editSubtotal) }}</span>
                             </div>
                         </div>
                     </div>
@@ -1301,7 +1416,8 @@ new #[Layout('layouts.app')] class extends Component {
 
                     <button wire:click="saveQuotationChanges" type="button" wire:loading.attr="disabled"
                         class="px-4 py-1.5 rounded bg-[#00a3cc] text-white text-xs font-semibold hover:bg-[#008fb3] transition shadow-xs">
-                        <span wire:loading.remove wire:target="saveQuotationChanges">{{ $editingQuotationId ? 'Save Changes' : 'Create Quotation' }}</span>
+                        <span wire:loading.remove
+                            wire:target="saveQuotationChanges">{{ $editingQuotationId ? 'Save Changes' : 'Create Quotation' }}</span>
                         <span wire:loading wire:target="saveQuotationChanges">Saving...</span>
                     </button>
                 </div>

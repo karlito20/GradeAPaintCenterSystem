@@ -268,17 +268,17 @@ new #[Layout('layouts.app')] class extends Component {
                 <table class="w-full border-collapse border border-slate-300 text-xs">
                 <thead class="bg-slate-100 font-semibold uppercase text-slate-700 text-[10px] tracking-wider border-b border-slate-300">
                     <tr>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Invoice #</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Date</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Time</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-left whitespace-nowrap">Cashier</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Type</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Items</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap">Status</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Subtotal</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap">Discount</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-right whitespace-nowrap font-bold text-slate-900">Total Due</th>
-                        <th class="border border-slate-300 px-2.5 py-1.5 text-center whitespace-nowrap w-16">Actions</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-32 whitespace-nowrap">Invoice #</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-28 whitespace-nowrap">Date</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-left w-24 whitespace-nowrap">Time</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-left min-w-[120px] whitespace-nowrap">Cashier</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-center w-24 whitespace-nowrap">Type</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Items</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-center w-28 whitespace-nowrap">Status</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">Subtotal</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-right w-24 whitespace-nowrap">Discount</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-right w-28 whitespace-nowrap font-bold text-slate-900">Total Due</th>
+                        <th class="border border-slate-300 px-2.5 py-1.5 text-center w-16 whitespace-nowrap">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200">
@@ -327,10 +327,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <!-- Payment Status -->
                             <td class="border border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
                                 @if ($sale->balance_due > 0)
-                                    <div class="leading-tight">
-                                        <span class="inline-block px-1.5 py-0.5 text-[12px] font-medium text-slate-700">Downpayment</span>
-                                        <span class="block text-[10px] font-medium text-slate-600 mt-0.5">Bal: {{ $currency::format($sale->balance_due) }}</span>
-                                    </div>
+                                    <span class="inline-block px-1.5 py-0.5 text-[12px] font-medium text-slate-700">Downpayment</span>
                                 @else
                                     <span class="inline-block px-1.5 py-0.5 text-[12px] font-medium text-slate-700">Paid</span>
                                 @endif
