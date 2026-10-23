@@ -401,3 +401,92 @@ test('pos page filter inputs use rounded border matching sales module', function
         ->test('pages.sales.index')
         ->assertSee('class="w-full h-9 rounded border border-slate-300 pl-9 pr-3 text-xs bg-white text-slate-900', false);
 });
+
+test('custom mix page table removes total downpayment and change columns', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+    $brand = Brand::create(['name' => 'Davies Test', 'active' => true]);
+
+    $sale = Sale::create([
+        'user_id' => $user->id,
+        'invoice_number' => 'CM-TEST-COLS-01',
+        'sold_at' => now(),
+        'type' => 'custom_mix',
+        'subtotal' => 1200.0,
+        'tax_rate' => 0.0,
+        'tax_amount' => 0.0,
+        'total' => 1200.0,
+        'payment_status' => 'downpayment_paid',
+        'downpayment_amount' => 600.0,
+        'balance_due' => 600.0,
+    ]);
+
+    MixingTransaction::create([
+        'sale_id' => $sale->id,
+        'user_id' => $user->id,
+        'brand_id' => $brand->id,
+        'custom_color' => 'Ocean Blue',
+        'resulting_quantity' => 2.0,
+        'resulting_unit' => 'gal',
+        'price_basis' => 600.0,
+        'status' => 'pending_mix',
+    ]);
+
+    $component = Volt::actingAs($user)
+        ->test('pages.sales.custom-mixes');
+
+    $html = $component->html();
+
+    expect($html)->toContain('Invoice #')
+        ->and($html)->toContain('Color Name')
+        ->and($html)->toContain('Volume')
+        ->and($html)->toContain('Status')
+        ->and($html)->not->toContain('>Total</th>')
+        ->and($html)->not->toContain('>Downpayment</th>')
+        ->and($html)->not->toContain('>Change</th>');
+});
+
+test('pos page supports toggling between table and grid views with matching product data', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+    $brand = Brand::create(['name' => 'SuperBrand', 'active' => true]);
+    $unit = PackageUnit::create(['name' => 'Gallon', 'abbreviation' => 'gal', 'active' => true]);
+    $category = Category::create(['name' => 'Topcoat', 'active' => true]);
+
+    $product = Product::create([
+        'sku' => 'TEST-SUPER-GLOSS',
+        'name' => 'Super Premium Gloss',
+        'brand_id' => $brand->id,
+        'category_id' => $category->id,
+        'package_unit_id' => $unit->id,
+        'selling_price' => 850.00,
+        'is_active' => true,
+        'status' => 'in_stock',
+    ]);
+
+    Inventory::create([
+        'product_id' => $product->id,
+        'location' => 'storefront',
+        'quantity' => 15.00,
+    ]);
+
+    $component = Volt::actingAs($user)
+        ->test('pages.sales.index');
+
+    // Default view mode is table
+    expect($component->get('viewMode'))->toBe('table');
+
+    // Switch to grid view
+    $component->call('setViewMode', 'grid')
+        ->assertSet('viewMode', 'grid');
+
+    $html = $component->html();
+    expect($html)->toContain('SuperBrand')
+        ->and($html)->toContain('Super Premium Gloss')
+        ->and($html)->toContain('gal')
+        ->and($html)->toContain('15.00')
+        ->and($html)->toContain('₱850.00')
+        ->and($html)->toContain('grid-prod-'.$product->id);
+
+    // Switch back to table view
+    $component->call('setViewMode', 'table')
+        ->assertSet('viewMode', 'table');
+});

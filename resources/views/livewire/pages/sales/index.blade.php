@@ -28,6 +28,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $categoryId = '';
     public string $packageUnitId = '';
     public bool $availableOnly = true;
+    public string $viewMode = 'table'; // 'table' or 'grid'
 
     // Add-to-cart form
     public bool $showAddToCartModal = false;
@@ -79,6 +80,13 @@ new #[Layout('layouts.app')] class extends Component {
     {
         abort_unless(auth()->user()?->canAccessPos(), 403, 'Mixers cannot access Point of Sale.');
         $this->cart = session('pos.cart', []);
+        $this->viewMode = session('pos.view_mode', 'table');
+    }
+
+    public function setViewMode(string $mode): void
+    {
+        $this->viewMode = in_array($mode, ['table', 'grid'], true) ? $mode : 'table';
+        session(['pos.view_mode' => $this->viewMode]);
     }
 
     public function updatedSearch(): void
@@ -952,6 +960,20 @@ new #[Layout('layouts.app')] class extends Component {
                             <input wire:model.live="availableOnly" type="checkbox" class="rounded border-slate-300 text-slate-900 focus:ring-0" />
                             <span>In Stock Only</span>
                         </label>
+                        <div class="inline-flex h-9 rounded border border-slate-300 bg-slate-100 p-0.5" role="group">
+                            <button type="button" wire:click="setViewMode('table')"
+                                title="Table view"
+                                class="inline-flex items-center gap-1.5 px-2.5 rounded text-xs font-semibold transition {{ $viewMode === 'table' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700' }}">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                                <span>Table</span>
+                            </button>
+                            <button type="button" wire:click="setViewMode('grid')"
+                                title="Grid view"
+                                class="inline-flex items-center gap-1.5 px-2.5 rounded text-xs font-semibold transition {{ $viewMode === 'grid' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700' }}">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                                <span>Grid</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="flex items-center gap-2">
                         <select wire:model.live="brandId" class="flex-1 h-9 rounded border border-slate-300 text-xs px-2.5 focus:border-slate-500 focus:ring-1 focus:ring-slate-500 bg-white text-slate-700">
@@ -978,20 +1000,82 @@ new #[Layout('layouts.app')] class extends Component {
                     </div>
                 </div>
 
-                {{-- Product Table: Clean unbordered rows --}}
+                {{-- Product Table / Grid View --}}
                 <div class="flex-1 overflow-y-auto">
-                    <table class="w-full border-collapse text-xs">
-                        <thead class="sticky top-0 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-600 z-10 border-b border-slate-200">
-                            <tr>
-                                <th class="px-3 py-2 text-left w-24">Brand</th>
-                                <th class="px-3 py-2 text-left min-w-[150px]">Product Name</th>
-                                <th class="px-3 py-2 text-center w-16">Unit</th>
-                                <th class="px-3 py-2 text-right w-24">Stock</th>
-                                <th class="px-3 py-2 text-right w-20">Price</th>
-                                <th class="px-3 py-2 text-center w-12">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-200 bg-white">
+                    @if ($viewMode === 'table')
+                        <table class="w-full border-collapse text-xs">
+                            <thead class="sticky top-0 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-600 z-10 border-b border-slate-200">
+                                <tr>
+                                    <th class="px-3 py-2 text-left w-24">Brand</th>
+                                    <th class="px-3 py-2 text-left min-w-[150px]">Product Name</th>
+                                    <th class="px-3 py-2 text-center w-16">Unit</th>
+                                    <th class="px-3 py-2 text-right w-24">Stock</th>
+                                    <th class="px-3 py-2 text-right w-20">Price</th>
+                                    <th class="px-3 py-2 text-center w-12">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 bg-white">
+                                @forelse ($products as $product)
+                                    @php
+                                        $storageStock = $product->getStorageStock();
+                                        $storefrontStock = $product->getStorefrontStock();
+                                        $totalStock = $storageStock + $storefrontStock;
+                                        $isOut = $totalStock <= 0;
+                                        $isLow = !$isOut && $totalStock <= (float) $product->low_stock_threshold;
+                                        $isSelected = $selectedProductId == $product->id;
+                                    @endphp
+                                    <tr wire:click="selectProduct({{ $product->id }})"
+                                        wire:dblclick="openAddToCartModal({{ $product->id }})"
+                                        class="cursor-pointer transition-colors {{ $isSelected ? 'bg-slate-100' : 'hover:bg-slate-50' }} {{ $isOut ? 'opacity-50' : '' }}"
+                                        wire:key="prod-{{ $product->id }}">
+                                        <td class="px-3 py-2 text-slate-600 whitespace-nowrap">
+                                            {{ $product->brand?->name ?? '—' }}
+                                        </td>
+                                        <td class="px-3 py-2 font-medium text-slate-900 max-w-[200px]">
+                                            <span class="line-clamp-1 block" title="{{ $product->name }}">{{ $product->name }}</span>
+                                        </td>
+                                        <td class="px-3 py-2 text-center text-slate-700 whitespace-nowrap font-medium">
+                                            {{ $product->packageUnit?->abbreviation ?? ($product->packageUnit?->name ?? '—') }}
+                                        </td>
+                                        <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                                            @if ($isOut)
+                                                <span class="text-rose-600 font-semibold">Out</span>
+                                            @else
+                                                <div class="leading-tight">
+                                                    <span class="{{ $isLow ? 'text-amber-600 font-bold' : 'text-slate-800 font-semibold' }}">
+                                                        {{ number_format($totalStock, 2) }}
+                                                    </span>
+                                                </div>
+                                            @endif
+                                        </td>
+                                        <td class="px-3 py-2 text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+                                            {{ $currency::format($product->selling_price) }}
+                                        </td>
+                                        <td class="px-3 py-2 text-center whitespace-nowrap">
+                                            @if (!$isOut)
+                                                <button wire:click.stop="openAddToCartModal({{ $product->id }})" type="button"
+                                                    title="Add to cart"
+                                                    class="inline-flex items-center justify-center rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition shadow-xs">
+                                                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                                </button>
+                                            @else
+                                                <span class="text-[10px] text-slate-400 italic">None</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="6" class="px-6 py-12 text-center text-slate-400">
+                                            <p class="font-medium">No products found.</p>
+                                            <button wire:click="resetFilters" type="button" class="mt-2 text-slate-600 hover:underline text-[11px]">Clear filters</button>
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    @else
+                        {{-- Grid View --}}
+                        <div class="p-3 grid grid-cols-2 lg:grid-cols-3 gap-2.5">
                             @forelse ($products as $product)
                                 @php
                                     $storageStock = $product->getStorageStock();
@@ -1001,55 +1085,68 @@ new #[Layout('layouts.app')] class extends Component {
                                     $isLow = !$isOut && $totalStock <= (float) $product->low_stock_threshold;
                                     $isSelected = $selectedProductId == $product->id;
                                 @endphp
-                                <tr wire:click="selectProduct({{ $product->id }})"
+                                <div wire:click="selectProduct({{ $product->id }})"
                                     wire:dblclick="openAddToCartModal({{ $product->id }})"
-                                    class="cursor-pointer transition-colors {{ $isSelected ? 'bg-slate-100' : 'hover:bg-slate-50' }} {{ $isOut ? 'opacity-50' : '' }}"
-                                    wire:key="prod-{{ $product->id }}">
-                                    <td class="px-3 py-2 text-slate-600 whitespace-nowrap">
-                                        {{ $product->brand?->name ?? '—' }}
-                                    </td>
-                                    <td class="px-3 py-2 font-medium text-slate-900 max-w-[200px]">
-                                        <span class="line-clamp-1 block" title="{{ $product->name }}">{{ $product->name }}</span>
-                                    </td>
-                                    <td class="px-3 py-2 text-center text-slate-700 whitespace-nowrap font-medium">
-                                        {{ $product->packageUnit?->abbreviation ?? ($product->packageUnit?->name ?? '—') }}
-                                    </td>
-                                    <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-                                        @if ($isOut)
-                                            <span class="text-rose-600 font-semibold">Out</span>
-                                        @else
-                                            <div class="leading-tight">
-                                                <span class="{{ $isLow ? 'text-amber-600 font-bold' : 'text-slate-800 font-semibold' }}">
-                                                    {{ number_format($totalStock, 2) }}
+                                    wire:key="grid-prod-{{ $product->id }}"
+                                    class="flex flex-col justify-between p-3 rounded-lg border transition-all cursor-pointer select-none {{ $isSelected ? 'border-slate-800 bg-slate-100 ring-1 ring-slate-800 shadow-xs' : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs' }} {{ $isOut ? 'opacity-50' : '' }}">
+                                    <div>
+                                        <div class="flex items-center justify-between text-[11px] mb-1.5 gap-1">
+                                            <span class="text-slate-500 font-medium truncate" title="{{ $product->brand?->name ?? '—' }}">
+                                                {{ $product->brand?->name ?? '—' }}
+                                            </span>
+                                            <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium text-[10px] whitespace-nowrap">
+                                                {{ $product->packageUnit?->abbreviation ?? ($product->packageUnit?->name ?? '—') }}
+                                            </span>
+                                        </div>
+
+                                        <h4 class="font-semibold text-slate-900 text-xs line-clamp-2 leading-snug mb-2" title="{{ $product->name }}">
+                                            {{ $product->name }}
+                                        </h4>
+                                    </div>
+
+                                    <div class="pt-2 border-t border-slate-100 mt-auto">
+                                        <div class="flex items-center justify-between text-xs mb-2">
+                                            <span class="text-slate-500 text-[11px]">Stock</span>
+                                            <span class="tabular-nums">
+                                                @if ($isOut)
+                                                    <span class="text-rose-600 font-bold">Out</span>
+                                                @else
+                                                    <span class="{{ $isLow ? 'text-amber-600 font-bold' : 'text-slate-800 font-semibold' }}">
+                                                        {{ number_format($totalStock, 2) }}
+                                                    </span>
+                                                @endif
+                                            </span>
+                                        </div>
+
+                                        <div class="flex items-center justify-between gap-1">
+                                            <div>
+                                                <span class="text-[10px] text-slate-400 block leading-none">Price</span>
+                                                <span class="font-bold text-slate-900 text-xs tabular-nums">
+                                                    {{ $currency::format($product->selling_price) }}
                                                 </span>
                                             </div>
-                                        @endif
-                                    </td>
-                                    <td class="px-3 py-2 text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
-                                        {{ $currency::format($product->selling_price) }}
-                                    </td>
-                                    <td class="px-3 py-2 text-center whitespace-nowrap">
-                                        @if (!$isOut)
-                                            <button wire:click.stop="openAddToCartModal({{ $product->id }})" type="button"
-                                                title="Add to cart"
-                                                class="inline-flex items-center justify-center rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition shadow-xs">
-                                                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                                            </button>
-                                        @else
-                                            <span class="text-[10px] text-slate-400 italic">None</span>
-                                        @endif
-                                    </td>
-                                </tr>
+
+                                            @if (!$isOut)
+                                                <button wire:click.stop="openAddToCartModal({{ $product->id }})" type="button"
+                                                    title="Add to cart"
+                                                    class="inline-flex items-center justify-center rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition shadow-xs">
+                                                    <svg class="h-3.5 w-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                                    <span>Add</span>
+                                                </button>
+                                            @else
+                                                <span class="text-[10px] text-slate-400 italic">None</span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
                             @empty
-                                <tr>
-                                    <td colspan="6" class="px-6 py-12 text-center text-slate-400">
-                                        <p class="font-medium">No products found.</p>
-                                        <button wire:click="resetFilters" type="button" class="mt-2 text-slate-600 hover:underline text-[11px]">Clear filters</button>
-                                    </td>
-                                </tr>
+                                <div class="col-span-full py-12 text-center text-slate-400">
+                                    <p class="font-medium text-xs">No products found.</p>
+                                    <button wire:click="resetFilters" type="button" class="mt-2 text-slate-600 hover:underline text-[11px]">Clear filters</button>
+                                </div>
                             @endforelse
-                        </tbody>
-                    </table>
+                        </div>
+                    @endif
                 </div>
 
                 {{-- Pagination & Status Footer --}}

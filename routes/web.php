@@ -86,6 +86,14 @@ Volt::route('/inventory', 'pages.reports.inventory')
     ->middleware(['auth', 'verified'])
     ->name('inventory.index');
 
+Volt::route('/inventory/mixing-usage', 'pages.reports.mixing-usage')
+    ->middleware(['auth', 'verified'])
+    ->name('inventory.mixing-usage');
+
+Route::redirect('/reports/mixing-usage', '/inventory/mixing-usage')
+    ->middleware(['auth', 'verified'])
+    ->name('reports.mixing-usage');
+
 Volt::route('/inventory/movements', 'pages.inventory.movements')
     ->middleware(['auth', 'verified'])
     ->name('inventory.movements');

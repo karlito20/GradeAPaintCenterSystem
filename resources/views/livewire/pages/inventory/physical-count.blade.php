@@ -221,12 +221,17 @@ new #[Layout('layouts.app')] class extends Component {
                 $variance = round($physical - $systemQuantity, 2);
                 $lineReason = $this->lineReasons[$productId] ?? null;
 
+                $wasMixingCheck = (bool) $product->requires_physical_check;
+                $estimatedUsed = ($wasMixingCheck && $variance < 0) ? round($systemQuantity - $physical, 2) : ($wasMixingCheck ? 0.0 : null);
+
                 $count->items()->create([
                     'product_id' => $product->id,
                     'system_quantity' => $systemQuantity,
                     'physical_quantity' => $physical,
                     'variance' => $variance,
-                    'reason' => $lineReason ?: ($variance != 0 ? $this->notes : null),
+                    'was_mixing_check' => $wasMixingCheck,
+                    'estimated_used_quantity' => $estimatedUsed,
+                    'reason' => $lineReason ?: ($wasMixingCheck ? 'Paint used for mixing (physical check adjustment)' : ($variance != 0 ? $this->notes : null)),
                 ]);
 
                 $itemCount++;
@@ -244,19 +249,23 @@ new #[Layout('layouts.app')] class extends Component {
 
                     $reasonText = $lineReason ?: $this->notes;
                     if (empty($reasonText)) {
-                        $reasonText = $variance < 0 ? 'Physical count shortage adjustment' : 'Physical count overage adjustment';
+                        if ($wasMixingCheck && $variance < 0) {
+                            $reasonText = 'Mixing paint usage physical adjustment (' . $estimatedUsed . ' ' . ($product->packageUnit?->abbreviation ?? 'units') . ')';
+                        } else {
+                            $reasonText = $variance < 0 ? 'Physical count shortage adjustment' : 'Physical count overage adjustment';
+                        }
                     }
 
                     InventoryMovement::create([
                         'product_id' => $product->id,
                         'user_id' => auth()->id(),
-                        'type' => 'physical_adjustment',
+                        'type' => $wasMixingCheck && $variance < 0 ? 'mixing_usage' : 'physical_adjustment',
                         'quantity_change' => $variance,
                         'quantity_before' => $systemQuantity,
                         'quantity_after' => $physical,
                         'reference_type' => PhysicalInventory::class,
                         'reference_id' => $count->id,
-                        'reference_text' => 'Physical audit ' . $count->id . ' (' . ($variance < 0 ? 'Shortage' : 'Overage') . ')',
+                        'reference_text' => ($wasMixingCheck ? 'Mixing audit ' : 'Physical audit ') . $count->id . ' (' . ($variance < 0 ? 'Usage' : 'Overage') . ')',
                         'reason' => $reasonText,
                     ]);
                 }

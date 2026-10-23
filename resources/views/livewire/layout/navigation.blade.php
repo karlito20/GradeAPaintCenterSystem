@@ -8,6 +8,7 @@ new class extends Component {
     public bool $collapsed = false;
     public bool $productsExpanded = false;
     public bool $settingsExpanded = false;
+    public bool $inventoryReportExpanded = false;
 
     public function mount(): void
     {
@@ -20,6 +21,12 @@ new class extends Component {
             || request()->routeIs('inventory.movements')
             || request()->routeIs('inventory.physical-count');
         
+        // Auto-expand Inventory Report sub-menu if on an inventory report route
+        $this->inventoryReportExpanded = request()->routeIs('inventory.index')
+            || request()->routeIs('reports.inventory')
+            || request()->routeIs('inventory.mixing-usage')
+            || request()->routeIs('reports.mixing-usage');
+
         // Auto-expand Settings sub-menu if on a references route
         $this->settingsExpanded = request()->routeIs('references.*');
     }
@@ -39,6 +46,11 @@ new class extends Component {
     public function toggleProducts(): void
     {
         $this->productsExpanded = ! $this->productsExpanded;
+    }
+
+    public function toggleInventoryReport(): void
+    {
+        $this->inventoryReportExpanded = ! $this->inventoryReportExpanded;
     }
 
     public function toggleSettings(): void
@@ -306,24 +318,56 @@ new class extends Component {
                 </a>
             @endif
 
-            <!-- Inventory Report Link -->
-            <a href="{{ route('inventory.index') }}" wire:navigate
-               aria-label="Inventory Report"
-               class="relative group flex w-full items-center {{ $collapsed ? 'justify-center px-2 py-2.5' : 'justify-start px-3 py-2.5 gap-3' }} rounded-md text-sm font-medium transition {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900' }}">
-                <svg class="h-5 w-5 shrink-0 {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') ? 'text-[#008fb3]' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                @if (!$collapsed)
-                    <span>Inventory Report</span>
-                @else
+            <!-- Inventory Report (with General Inventory and Mixing Paint Usage submenu) -->
+            @if (!$collapsed)
+                <button wire:click="toggleInventoryReport" type="button"
+                    class="flex w-full items-center justify-start px-3 py-2.5 gap-3 rounded-md text-sm font-medium transition {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') || request()->routeIs('inventory.mixing-usage') || request()->routeIs('reports.mixing-usage') ? 'text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900' }}">
+                    <svg class="h-5 w-5 shrink-0 {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') || request()->routeIs('inventory.mixing-usage') || request()->routeIs('reports.mixing-usage') ? 'text-[#008fb3]' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span class="flex-1 text-left">Inventory Report</span>
+                    <svg class="h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform {{ $inventoryReportExpanded ? 'rotate-180' : '' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+
+                @if ($inventoryReportExpanded)
+                    <div class="pl-4 space-y-0.5">
+                        <a href="{{ route('inventory.index') }}" wire:navigate
+                           title="General Inventory"
+                           class="flex w-full items-center justify-start px-3 py-2 gap-2.5 rounded-md text-sm font-medium transition {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }}">
+                            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') ? 'text-[#008fb3]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span>General Inventory</span>
+                        </a>
+
+                        <a href="{{ route('inventory.mixing-usage') }}" wire:navigate
+                           title="Mixing Paint Usage"
+                           class="flex w-full items-center justify-start px-3 py-2 gap-2.5 rounded-md text-sm font-medium transition {{ request()->routeIs('inventory.mixing-usage') || request()->routeIs('reports.mixing-usage') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }}">
+                            <svg class="h-4 w-4 shrink-0 {{ request()->routeIs('inventory.mixing-usage') || request()->routeIs('reports.mixing-usage') ? 'text-[#008fb3]' : 'text-slate-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                            </svg>
+                            <span>Mixing Paint Usage</span>
+                        </a>
+                    </div>
+                @endif
+            @else
+                {{-- Collapsed: show Inventory Report icon linking to inventory index --}}
+                <a href="{{ route('inventory.index') }}" wire:navigate
+                   aria-label="Inventory Report"
+                   class="relative group flex w-full items-center justify-center px-2 py-2.5 rounded-md text-sm font-medium transition {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') || request()->routeIs('inventory.mixing-usage') || request()->routeIs('reports.mixing-usage') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900' }}">
+                    <svg class="h-5 w-5 shrink-0 {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') || request()->routeIs('inventory.mixing-usage') || request()->routeIs('reports.mixing-usage') ? 'text-[#008fb3]' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
                     <div class="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2.5 z-50 hidden sm:flex items-center opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150 ease-out">
                         <div class="relative px-2.5 py-1 text-xs font-semibold rounded-md shadow-lg bg-slate-900 text-white whitespace-nowrap">
                             <div class="absolute -left-1 top-1/2 -translate-y-1/2 border-y-4 border-y-transparent border-r-4 border-r-slate-900"></div>
                             Inventory Report
                         </div>
                     </div>
-                @endif
-            </a>
+                </a>
+            @endif
         </div>
 
         <!-- 4. SYSTEM SETTINGS (dev, admin only) -->
@@ -495,8 +539,9 @@ new class extends Component {
         @endif
         <a href="{{ route('inventory.stock-in') }}" wire:navigate class="block pl-8 px-3 py-2 rounded font-medium {{ request()->routeIs('inventory.stock-in') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100' }}">↳ Stock In</a>
         <a href="{{ route('inventory.movements') }}" wire:navigate class="block pl-8 px-3 py-2 rounded font-medium {{ request()->routeIs('inventory.movements') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100' }}">↳ Movements</a>
-        <a href="{{ route('inventory.physical-count') }}" wire:navigate class="block pl-8 px-3 py-2 rounded font-medium {{ request()->routeIs('inventory.physical-count') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100' }}">↳ Physical Count</a>
-        <a href="{{ route('inventory.index') }}" wire:navigate class="block px-3 py-2 rounded font-medium {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-700 hover:bg-slate-100' }}">Inventory Report</a>
+        <div class="block px-3 py-2 font-medium text-slate-700">Inventory Report</div>
+        <a href="{{ route('inventory.index') }}" wire:navigate class="block pl-8 px-3 py-2 rounded font-medium {{ request()->routeIs('inventory.index') || request()->routeIs('reports.inventory') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100' }}">↳ General Inventory</a>
+        <a href="{{ route('inventory.mixing-usage') }}" wire:navigate class="block pl-8 px-3 py-2 rounded font-medium {{ request()->routeIs('inventory.mixing-usage') || request()->routeIs('reports.mixing-usage') ? 'bg-cyan-50 text-[#008fb3] font-semibold' : 'text-slate-600 hover:bg-slate-100' }}">↳ Mixing Paint Usage</a>
 
         @if (auth()->user()->canAccessAdministration())
             <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-1 pt-2">System Settings</p>

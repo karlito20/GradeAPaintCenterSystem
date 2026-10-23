@@ -7,11 +7,26 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PhysicalInventoryItem extends Model
 {
-    protected $fillable = ['physical_inventory_id', 'product_id', 'system_quantity', 'physical_quantity', 'variance', 'reason'];
+    protected $fillable = [
+        'physical_inventory_id',
+        'product_id',
+        'system_quantity',
+        'physical_quantity',
+        'variance',
+        'was_mixing_check',
+        'estimated_used_quantity',
+        'reason',
+    ];
 
     protected function casts(): array
     {
-        return ['system_quantity' => 'decimal:2', 'physical_quantity' => 'decimal:2', 'variance' => 'decimal:2'];
+        return [
+            'system_quantity' => 'decimal:2',
+            'physical_quantity' => 'decimal:2',
+            'variance' => 'decimal:2',
+            'was_mixing_check' => 'boolean',
+            'estimated_used_quantity' => 'decimal:2',
+        ];
     }
 
     public function physicalInventory(): BelongsTo

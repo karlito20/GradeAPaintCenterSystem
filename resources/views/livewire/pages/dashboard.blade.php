@@ -233,7 +233,7 @@ new #[Layout('layouts.app')] class extends Component {
                     Queue</span>
             </div>
             <p
-                class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $physicalCheckCount > 0 ? 'text-amber-600' : 'text-slate-900' }} text-right">
+                class="mt-3 tabular-nums text-3xl sm:text-4xl font-light {{ $physicalCheckCount > 0 ? 'text-slate-900' : 'text-slate-900' }} text-right">
                 {{ $physicalCheckCount }}</p>
             <p class="mt-1 text-[11px] text-slate-400 text-right">Products used in mixing</p>
         </div>
@@ -636,7 +636,6 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="flex items-center justify-between">
                         <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">7-Day
                             Total Sales</span>
-                        <span class="text-[10px] font-semibold uppercase text-cyan-700">Past 7 Days</span>
                     </div>
                     <div class="my-auto py-1">
                         <p class="tabular-nums text-2xl sm:text-3xl font-light text-slate-900 text-right">
@@ -652,7 +651,6 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="flex items-center justify-between">
                         <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Daily
                             Average</span>
-                        <span class="text-[10px] font-semibold uppercase text-slate-500">Mean / Day</span>
                     </div>
                     <div class="my-auto py-1">
                         <p class="tabular-nums text-2xl sm:text-3xl font-light text-slate-900 text-right">
@@ -668,7 +666,6 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="flex items-center justify-between">
                         <span class="font-heading text-xs font-normal uppercase tracking-wider text-slate-500">Total
                             Transactions</span>
-                        <span class="text-[10px] font-semibold uppercase text-slate-500">Volume</span>
                     </div>
                     <div class="my-auto py-1">
                         <p class="tabular-nums text-2xl sm:text-3xl font-light text-slate-900 text-right">
